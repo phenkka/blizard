@@ -26,6 +26,7 @@ from nacl.exceptions import BadSignatureError
 import secrets
 import asyncio
 from contextlib import asynccontextmanager
+import httpx
 
 # Настройки
 class Settings(BaseSettings):
@@ -124,6 +125,11 @@ class UserResponse(BaseModel):
     last_login: Optional[datetime]
     nfts: Optional[List[Dict[str, Any]]] = []
     token_balance: Optional[int] = 0
+
+class TokenBurnRequest(BaseModel):
+    """Запрос на проверку burn транзакции"""
+    signature: str = Field(..., min_length=64, max_length=128, description="Transaction signature")
+    amount: int = Field(..., gt=0, description="Amount of tokens burned")
 
 # База данных
 class Database:
@@ -278,6 +284,12 @@ rate_limiter = RateLimiter()
 
 # Middleware для rate limiting
 async def rate_limit_middleware(request: Request, call_next):
+    # Исключаем статические файлы и favicon из rate limiting
+    excluded_paths = ['/favicon.ico', '/css/', '/js/', '/assets/']
+    
+    if any(request.url.path.startswith(path) for path in excluded_paths):
+        return await call_next(request)
+    
     client_ip = request.client.host
     
     if not rate_limiter.is_allowed(client_ip):
@@ -346,6 +358,11 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     return payload
 
 # API Роуты (должны быть перед монтированием статики)
+@app.get("/favicon.ico")
+async def favicon():
+    """Return empty response for favicon requests"""
+    return Response(content=b'', media_type='image/x-icon')
+
 @app.get("/api")
 async def root_api():
     """API корневой эндпоинт"""
@@ -515,6 +532,22 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
                 fetch="one"
             )
         
+        # Получение NFTs пользователя
+        nfts_query = """
+            SELECT id, mint_address, name, image_url, rarity, level
+            FROM user_nfts 
+            WHERE user_id = %s
+        """
+        nfts_result = db.execute_query(nfts_query, (user_result["id"],), fetch="all")
+        nfts = [{
+            "id": nft["id"],
+            "mint": nft["mint_address"],
+            "name": nft["name"],
+            "image": nft["image_url"],
+            "rarity": nft["rarity"],
+            "level": nft["level"]
+        } for nft in (nfts_result or [])]
+        
         db.close()
         
         return UserResponse(
@@ -523,7 +556,8 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
             username=user_result["username"],
             avatar_url=user_result["avatar_url"],
             created_at=user_result["created_at"],
-            last_login=user_result["last_login"]
+            last_login=user_result["last_login"],
+            nfts=nfts
         )
         
     except Exception as e:
@@ -584,6 +618,22 @@ async def update_profile(
                 detail="User not found"
             )
         
+        # Получение NFTs пользователя
+        nfts_query = """
+            SELECT id, mint_address, name, image_url, rarity, level
+            FROM user_nfts 
+            WHERE user_id = %s
+        """
+        nfts_result = db.execute_query(nfts_query, (result["id"],), fetch="all")
+        nfts = [{
+            "id": nft["id"],
+            "mint": nft["mint_address"],
+            "name": nft["name"],
+            "image": nft["image_url"],
+            "rarity": nft["rarity"],
+            "level": nft["level"]
+        } for nft in (nfts_result or [])]
+        
         db.close()
         
         logger.info(f"Profile updated successfully for user: {current_user['walletAddress']}")
@@ -594,7 +644,8 @@ async def update_profile(
             username=result["username"],
             avatar_url=result["avatar_url"],
             created_at=result["created_at"],
-            last_login=result["last_login"]
+            last_login=result["last_login"],
+            nfts=nfts
         )
         
     except HTTPException:
@@ -649,6 +700,240 @@ async def add_nft(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to add NFT"
+        )
+
+@app.post("/api/skills/verify-burn")
+async def verify_burn_transaction(
+    burn_request: TokenBurnRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Проверка burn транзакции через Solana RPC"""
+    try:
+        logger.info(f"Verifying burn transaction: {burn_request.signature}")
+        logger.info(f"User wallet: {current_user['walletAddress']}")
+        
+        # Константы
+        TREASURY_WALLET = "Fqd19aFbZc6SHf9ifVU1SmounsFTjBEqkfJVLD51fa47"
+        TOKEN_MINT = "8AFshqbDiPtFYe8KUNXa4F88DFh8yD8J5MXyeREopump"
+        HELIUS_API_KEY = "2b51d0c8-c911-4ffe-a74a-15c2633620b3"
+        RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
+        
+        # Retry логика - транзакция может еще не быть проиндексирована
+        max_retries = 10
+        retry_delay = 3  # секунды
+        
+        tx_data = None
+        
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            # First, check transaction status with getSignatureStatuses (faster)
+            for attempt in range(max_retries):
+                if attempt > 0:
+                    logger.info(f"Checking signature status, attempt {attempt + 1}/{max_retries}")
+                    await asyncio.sleep(retry_delay)
+                
+                status_response = await client.post(
+                    RPC_URL,
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "getSignatureStatuses",
+                        "params": [
+                            [burn_request.signature],
+                            {"searchTransactionHistory": True}
+                        ]
+                    }
+                )
+                
+                if status_response.status_code == 200:
+                    status_data = status_response.json()
+                    logger.info(f"Signature status response: {status_data}")
+                    
+                    result = status_data.get("result", {})
+                    values = result.get("value", [])
+                    
+                    if values and values[0]:
+                        status_info = values[0]
+                        confirmation_status = status_info.get("confirmationStatus")
+                        logger.info(f"Transaction status: {confirmation_status}, err: {status_info.get('err')}")
+                        
+                        if status_info.get("err"):
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="Transaction failed on blockchain"
+                            )
+                        
+                        if confirmation_status in ["confirmed", "finalized"]:
+                            logger.info(f"Transaction confirmed, fetching details...")
+                            break
+                
+                if attempt == max_retries - 1:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Transaction not confirmed after {max_retries * retry_delay} seconds. Please wait and try again."
+                    )
+            
+            # Now get full transaction details with retry
+            logger.info("Fetching full transaction details...")
+            tx_data = None
+            
+            for attempt in range(max_retries):
+                if attempt > 0:
+                    logger.info(f"Retrying getTransaction, attempt {attempt + 1}/{max_retries}")
+                    await asyncio.sleep(2)  # Shorter delay for transaction fetch
+                
+                response = await client.post(
+                    RPC_URL,
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "getTransaction",
+                        "params": [
+                            burn_request.signature,
+                            {
+                                "encoding": "jsonParsed",
+                                "maxSupportedTransactionVersion": 0
+                            }
+                        ]
+                    }
+                )
+                
+                if response.status_code != 200:
+                    logger.error(f"Failed to fetch transaction: HTTP {response.status_code}")
+                    if attempt == max_retries - 1:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Failed to fetch transaction from Solana"
+                        )
+                    continue
+                
+                tx_data = response.json()
+                
+                if "error" in tx_data:
+                    logger.error(f"RPC error: {tx_data.get('error')}")
+                    if attempt == max_retries - 1:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Transaction error: {tx_data['error']}"
+                        )
+                    continue
+                
+                result = tx_data.get("result")
+                if result:
+                    logger.info(f"Transaction data fetched successfully on attempt {attempt + 1}")
+                    break
+                else:
+                    logger.warning(f"Transaction result is None, retrying...")
+                    if attempt == max_retries - 1:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Transaction confirmed but not yet indexed. Please try again in a few seconds."
+                        )
+            
+            result = tx_data.get("result")
+            
+            logger.info(f"Transaction result keys: {result.keys()}")
+            
+            # Проверка что транзакция успешна
+            meta_err = result.get("meta", {}).get("err")
+            logger.info(f"Transaction meta.err: {meta_err}")
+            
+            if meta_err is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Transaction failed on blockchain"
+                )
+            
+            # Проверка отправителя (должен быть текущий пользователь)
+            transaction = result.get("transaction", {})
+            message = transaction.get("message", {})
+            account_keys = message.get("accountKeys", [])
+            
+            logger.info(f"Account keys count: {len(account_keys)}")
+            
+            if not account_keys or len(account_keys) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid transaction structure"
+                )
+            
+            sender = account_keys[0].get("pubkey")
+            logger.info(f"Transaction sender: {sender}, Expected: {current_user['walletAddress']}")
+            
+            if sender != current_user["walletAddress"]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Transaction sender does not match authenticated user"
+                )
+            
+            # Проверка инструкций транзакции
+            instructions = message.get("instructions", [])
+            logger.info(f"Instructions count: {len(instructions)}")
+            
+            transfer_found = False
+            transferred_amount = 0
+            
+            for idx, instruction in enumerate(instructions):
+                logger.info(f"Instruction {idx}: {instruction.get('program', instruction.get('programId', 'unknown'))}")
+                parsed = instruction.get("parsed")
+                
+                if parsed:
+                    logger.info(f"Parsed instruction type: {parsed.get('type')}")
+                    
+                if parsed and parsed.get("type") == "transfer":
+                    info = parsed.get("info", {})
+                    destination = info.get("destination")
+                    
+                    logger.info(f"Transfer info: {info}")
+                    
+                    # Проверяем что перевод на treasury wallet
+                    if destination:
+                        # Нужно проверить associated token account для treasury
+                        logger.info(f"Transfer destination: {destination}")
+                        transfer_found = True
+                        
+                        # Получаем сумму (может быть в lamports или в tokenAmount)
+                        amount_str = info.get("amount") or info.get("tokenAmount", {}).get("amount")
+                        if amount_str:
+                            transferred_amount = int(amount_str)
+                            logger.info(f"Found transferred amount: {transferred_amount}")
+            
+            logger.info(f"Transfer found: {transfer_found}, Amount: {transferred_amount}")
+            
+            if not transfer_found:
+                logger.error("No transfer instruction found in transaction")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No valid transfer instruction found in transaction"
+                )
+            
+            # Проверка суммы (с учетом decimals = 6 для Tired token)
+            expected_amount = burn_request.amount * (10 ** 6)
+            logger.info(f"Expected amount: {expected_amount}, Transferred: {transferred_amount}")
+            
+            if transferred_amount < expected_amount * 0.99:  # 1% tolerance for rounding
+                logger.error(f"Amount mismatch! Expected at least {expected_amount * 0.99}, got {transferred_amount}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Transfer amount mismatch. Expected {expected_amount}, got {transferred_amount}"
+                )
+            
+            logger.info(f"Burn verification successful: {burn_request.signature}")
+            
+            return {
+                "success": True,
+                "signature": burn_request.signature,
+                "amount": burn_request.amount,
+                "verified": True,
+                "message": "Transaction verified successfully"
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Burn verification error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to verify burn transaction: {str(e)}"
         )
 
 @app.get("/api/skills")

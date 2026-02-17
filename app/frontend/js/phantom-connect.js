@@ -23,7 +23,7 @@ class PhantomConnectManager {
   }
 
   async init() {
-    Debug.log('Using direct Phantom wallet connection');
+    console.log('Using direct Phantom wallet connection');
     
     // Check for existing session
     const storedToken = localStorage.getItem('wb_token');
@@ -53,11 +53,11 @@ class PhantomConnectManager {
             }
           }
         } catch (error) {
-          Debug.log('Auto-connect failed, manual connection required');
+          console.log('Auto-connect failed, manual connection required');
         }
       }
     } catch (error) {
-      Debug.log('Auto-connect failed, manual connection required');
+      console.log('Auto-connect failed, manual connection required');
     }
   }
 
@@ -65,7 +65,7 @@ class PhantomConnectManager {
     try {
       return await this.connectDirect();
     } catch (error) {
-      Debug.error('Phantom connection error:', error);
+      console.error('Phantom connection error:', error);
       this.disconnect();
       throw error;
     }
@@ -88,19 +88,19 @@ class PhantomConnectManager {
     // Get challenge from backend
     const challenge = await this.getChallenge(publicKey);
     
-    Debug.log('Challenge received:', challenge);
+    console.log('Challenge received:', challenge);
     
     // Sign the challenge message
     const encodedMessage = new TextEncoder().encode(challenge.message);
     const signatureResp = await window.solana.signMessage(encodedMessage, 'utf8');
     
-    Debug.log('Signature response:', signatureResp);
-    Debug.log('Signature type:', typeof signatureResp.signature);
-    Debug.log('Signature length:', signatureResp.signature.length);
+    console.log('Signature response:', signatureResp);
+    console.log('Signature type:', typeof signatureResp.signature);
+    console.log('Signature length:', signatureResp.signature.length);
     
     // Convert signature Uint8Array to base64 string for backend (временно)
     const signatureBase64 = btoa(String.fromCharCode(...signatureResp.signature));
-    Debug.log('Signature base64:', signatureBase64);
+    console.log('Signature base64:', signatureBase64);
     
     // Verify signature with backend and get token
     const authResult = await this.verifySignature(
@@ -141,14 +141,14 @@ class PhantomConnectManager {
 
       return await response.json();
     } catch (error) {
-      Debug.error('Challenge request error:', error);
+      console.error('Challenge request error:', error);
       throw error;
     }
   }
 
   async verifySignature(publicKey, signature, message) {
     try {
-      Debug.log('Verifying signature:', { publicKey, signature, message });
+      console.log('Verifying signature:', { publicKey, signature, message });
       
       const response = await fetch(`${this.API_BASE_URL}/auth/verify`, {
         method: 'POST',
@@ -162,19 +162,19 @@ class PhantomConnectManager {
         })
       });
 
-      Debug.log('Verification response status:', response.status);
+      console.log('Verification response status:', response.status);
       
       if (!response.ok) {
         const errorData = await response.json();
-        Debug.error('Verification failed:', errorData);
+        console.error('Verification failed:', errorData);
         throw new Error(errorData.detail || 'Signature verification failed');
       }
 
       const result = await response.json();
-      Debug.log('Verification success:', result);
+      console.log('Verification success:', result);
       return result;
     } catch (error) {
-      Debug.error('Signature verification error:', error);
+      console.error('Signature verification error:', error);
       throw error;
     }
   }
@@ -195,6 +195,14 @@ class PhantomConnectManager {
           publicKey: userData.wallet_address,
           ...userData
         };
+        // Update localStorage with fresh user data from API
+        localStorage.setItem('wb_user', JSON.stringify({
+          id: userData.id,
+          walletAddress: userData.wallet_address,
+          username: userData.username,
+          avatarUrl: userData.avatar_url,
+          nfts: userData.nfts
+        }));
         return true;
       } else {
         // Token invalid, clear session
@@ -202,7 +210,7 @@ class PhantomConnectManager {
         return false;
       }
     } catch (error) {
-      Debug.error('Session validation error:', error);
+      console.error('Session validation error:', error);
       this.clearSession();
       return false;
     }
@@ -211,7 +219,7 @@ class PhantomConnectManager {
   disconnect() {
     if (window.solana && window.solana.isPhantom) {
       // Disconnect from Phantom
-      window.solana.disconnect().catch(Debug.error);
+      window.solana.disconnect().catch(console.error);
     }
     
     this.isConnected = false;
@@ -293,10 +301,24 @@ class PhantomConnectManager {
   }
 
   async updateProfile(profileData) {
-    return await this.apiRequest('/user/profile', {
+    const result = await this.apiRequest('/user/profile', {
       method: 'PATCH',
       body: JSON.stringify(profileData)
     });
+    
+    // Update localStorage with new profile data
+    if (result) {
+      const currentUser = this.getUser() || {};
+      const updatedUser = {
+        ...currentUser,
+        username: result.username,
+        avatarUrl: result.avatar_url,
+        nfts: result.nfts || []
+      };
+      localStorage.setItem('wb_user', JSON.stringify(updatedUser));
+    }
+    
+    return result;
   }
 
   async addNFT(nftData) {
@@ -390,7 +412,17 @@ class PhantomConnectManager {
   }
 
   async getLeaderboard() {
-    return await this.apiRequest('/leaderboard');
+    try {
+      // Public endpoint - no auth required
+      const response = await fetch(`${this.API_BASE_URL}/leaderboard`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Leaderboard fetch error:', error);
+      return { leaderboard: [] };
+    }
   }
 }
 

@@ -76,6 +76,38 @@ INSERT INTO skills (name, description, required_level) VALUES
 ('Healing Light', 'Restore health during battle', 3),
 ('Shadow Dash', 'Evade attacks and counter', 5);
 
+-- Test data for leaderboard
+INSERT INTO users (wallet_address, username, created_at) VALUES
+('TEST1DragonSlayerWallet111111111111111', 'xDragonSlayer', NOW()),
+('TEST2CryptoMageWallet222222222222222222', 'CryptoMage99', NOW()),
+('TEST3ShadowBladeWallet333333333333333333', 'ShadowBlade', NOW()),
+('TEST4PhantomKingWallet444444444444444444', 'PhantomKing', NOW()),
+('TEST5RuneHunterWallet555555555555555555', 'RuneHunter', NOW()),
+('TEST6StormBreakerWallet66666666666666666', 'StormBreaker', NOW()),
+('TEST7MysticSageWallet777777777777777777', 'MysticSage', NOW()),
+('TEST8IronFistWallet88888888888888888888', 'IronFist', NOW())
+ON CONFLICT (wallet_address) DO NOTHING;
+
+INSERT INTO leaderboard (user_id, wins, losses, points) 
+SELECT id, wins_val, losses_val, points_val FROM (
+    SELECT u.id, 45 as wins_val, 12 as losses_val, 2840 as points_val FROM users u WHERE u.username = 'xDragonSlayer'
+    UNION ALL
+    SELECT u.id, 38, 15, 2310 FROM users u WHERE u.username = 'CryptoMage99'
+    UNION ALL
+    SELECT u.id, 32, 18, 1980 FROM users u WHERE u.username = 'ShadowBlade'
+    UNION ALL
+    SELECT u.id, 28, 20, 1750 FROM users u WHERE u.username = 'PhantomKing'
+    UNION ALL
+    SELECT u.id, 25, 22, 1620 FROM users u WHERE u.username = 'RuneHunter'
+    UNION ALL
+    SELECT u.id, 22, 25, 1450 FROM users u WHERE u.username = 'StormBreaker'
+    UNION ALL
+    SELECT u.id, 18, 28, 1280 FROM users u WHERE u.username = 'MysticSage'
+    UNION ALL
+    SELECT u.id, 15, 30, 1100 FROM users u WHERE u.username = 'IronFist'
+) AS leaderboard_data
+ON CONFLICT (user_id) DO NOTHING;
+--END OF TEST DATA
 CREATE INDEX IF NOT EXISTS idx_users_wallet ON users(wallet_address);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_user_nfts_user_id ON user_nfts(user_id);

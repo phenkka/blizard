@@ -76,25 +76,28 @@ if (typeof solana === 'undefined') {
       btnConnect.disabled = true;
 
       try {
-        Debug.log('Starting wallet connection...');
-        Debug.log('PhantomConnect available:', !!window.PhantomConnect);
-        Debug.log('Phantom installed:', window.PhantomConnect ? window.PhantomConnect.isPhantomInstalled() : 'N/A');
-        Debug.log('Using fallback:', window.PhantomConnect ? window.PhantomConnect.useFallback : 'N/A');
+        console.log('Starting wallet connection...');
+        console.log('PhantomConnect available:', !!window.PhantomConnect);
+        console.log('Phantom installed:', window.PhantomConnect ? window.PhantomConnect.isPhantomInstalled() : 'N/A');
+        console.log('Using fallback:', window.PhantomConnect ? window.PhantomConnect.useFallback : 'N/A');
         
         const authResult = await window.PhantomConnect.connect();
         const walletAddr = authResult.publicKey;
 
-        Debug.log('Wallet connected successfully:', walletAddr);
+        console.log('Wallet connected successfully:', walletAddr);
 
-        /* Check if user already has profile with NFTs */
+        /* Check if user already has completed registration (has username) */
         try {
           const profile = await window.PhantomConnect.getUserProfile();
-          if (profile.nfts && profile.nfts.length > 0) {
+          console.log('Profile data:', profile);
+          if (profile.username) {
+            // User already registered, redirect to game
+            console.log('User already registered, redirecting to app');
             window.location.href = 'app.html';
             return;
           }
         } catch (error) {
-          Debug.log('Profile not found, proceeding with registration');
+          console.log('Profile not found or incomplete, proceeding with registration');
         }
 
         /* ====== ACCESS GATE CHECK ====== */
@@ -102,7 +105,7 @@ if (typeof solana === 'undefined') {
 
         // Check NFTs
         scannedNFTs = await NFTScanner.scan(walletAddr);
-        Debug.log('NFT scan result:', scannedNFTs.length, 'NFTs found');
+        console.log('NFT scan result:', scannedNFTs.length, 'NFTs found');
 
         // Check token balance
         console.log('Getting token balance...');
@@ -213,7 +216,7 @@ if (typeof solana === 'undefined') {
         modalReg.classList.remove('hidden');
 
       } catch (err) {
-        Debug.error('Connection error:', err);
+        console.error('Connection error:', err);
         
         // Provide better error messages
         if (err.message.includes('not installed')) {
