@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Token Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #1a1a1a; color: white; }
+        button { padding: 10px 20px; margin: 10px; background: #4CAF50; color: white; border: none; cursor: pointer; }
+        button:hover { background: #45a049; }
+        .result { background: #333; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .error { background: #f44336; }
+        .success { background: #4CAF50; }
+        pre { white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>Token Balance Test</h1>
+    <p>Testing token balance for: <code>8AFshqbDiPtFYe8KUNXa4F88DFh8yD8J5MXyeREopump</code></p>
+    
+    <button onclick="checkWallet()">Check Wallet Connection</button>
+    <button onclick="checkTokens()">Check Token Balance</button>
+    <button onclick="checkAll()">Check Everything</button>
+    
+    <div id="result" class="result">Click buttons above to test...</div>
+
+    <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+    <script>
+        // Wait for Solana Web3 to be ready
+        function waitForSolanaWeb3() {
+            if (typeof solana !== 'undefined' && solana.Web3) {
+                console.log('Solana Web3 loaded successfully!');
+                document.getElementById('result').innerHTML = '✅ Solana Web3 loaded. Ready to test!';
+            } else {
+                setTimeout(waitForSolanaWeb3, 100);
+            }
+        }
+        
+        // Start waiting when page loads
+        window.addEventListener('load', waitForSolanaWeb3);
+        
+        function updateResult(message, isError = false) {
+            const result = document.getElementById('result');
+            result.innerHTML = message;
+            result.className = 'result ' + (isError ? 'error' : 'success');
+        }
+
+        function checkWallet() {
+            updateResult('Checking wallet connection...');
+            
+            if (!window.solana) {
+                updateResult('❌ Solana object not found. Is Phantom installed?', true);
+                return;
+            }
+            
+            if (!window.solana.isPhantom) {
+                updateResult('❌ Phantom wallet not detected', true);
+                return;
+            }
+            
+            if (!window.solana.publicKey) {
+                updateResult('❌ Wallet not connected. Please connect your wallet first.', true);
+                return;
+            }
+            
+            updateResult('✅ Wallet connected: ' + window.solana.publicKey.toString());
+        }
+
+        async function checkTokens() {
+            updateResult('Checking token balance...');
+            
+            try {
+                if (!window.solana || !window.solana.publicKey) {
+                    updateResult('❌ Wallet not connected', true);
+                    return;
+                }
+
+                // Use Helius RPC
+                const HELIUS_RPC = 'https://mainnet.helius-rpc.com/?api-key=2b51d0c8-c911-4ffe-a74a-15c2633620b3';
+                
+                const connection = new solana.Web3.Connection(HELIUS_RPC, 'confirmed');
+
+                const publicKey = new solana.Web3.PublicKey(window.solana.publicKey.toString());
+                const tokenMintPubkey = new solana.Web3.PublicKey('8AFshqbDiPtFYe8KUNXa4F88DFh8yD8J5MXyeREopump');
+
+                console.log('Checking tokens for:', publicKey.toString());
+                console.log('Token mint:', '8AFshqbDiPtFYe8KUNXa4F88DFh8yD8J5MXyeREopump');
+                console.log('Using Helius RPC');
+
+                // Get ALL token accounts (not just specific mint)
+                const allTokenAccounts = await connection.getParsedTokenAccountsByOwner(
+                    publicKey,
+                    { programId: new solana.Web3.PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA') },
+                    { commitment: 'confirmed' }
+                );
+
+                console.log('All token accounts:', allTokenAccounts.value.length);
+
+                // Find our specific token
+                let targetBalance = 0;
+                let foundTarget = false;
+                
+                for (const account of allTokenAccounts.value) {
+                    const accountData = account.account.data.parsed.info;
+                    const mint = accountData.mint;
+                    const balance = accountData.tokenAmount.uiAmount || 0;
+                    
+                    console.log('Token account: ' + mint + ' - Balance: ' + balance);
+                    
+                    if (mint === '8AFshqbDiPtFYe8KUNXa4F88DFh8yD8J5MXyeREopump') {
+                        targetBalance = balance;
+                        foundTarget = true;
+                        console.log('Found target token!');
+                    }
+                }
+
+                let result = '🔍 Token Accounts Found: ' + allTokenAccounts.value.length + '<br>';
+                result += '🎯 Target Token Found: ' + (foundTarget ? 'YES' : 'NO') + '<br>';
+                result += '💰 Target Token Balance: ' + targetBalance.toLocaleString() + '<br>';
+                result += '✅ Access Granted: ' + (targetBalance >= 20000 ? 'YES' : 'NO');
+                
+                updateResult(result);
+
+            } catch (error) {
+                console.error('Error checking tokens:', error);
+                updateResult('❌ Error: ' + error.message, true);
+            }
+        }
+
+        async function checkAll() {
+            checkWallet();
+            setTimeout(checkTokens, 1000);
+        }
+    </script>
+</body>
+</html>

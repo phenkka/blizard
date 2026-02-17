@@ -1,0 +1,69 @@
+networks:
+  blizard:
+
+services:
+  db:
+    image: postgres:15
+    env_file: .env
+    container_name: bl_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01_init.sql
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-lab}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    environment:
+      - DB_HOST=${POSTGRES_HOST:-db}
+      - DB_PORT=${POSTGRES_PORT:-5432}
+      - DB_NAME=${POSTGRES_DB:-blizard}
+      - DB_USER=${POSTGRES_USER:-admin}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-12345}
+      - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-in-production_make_it_long_and_random}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - JWT_EXPIRE_HOURS=${JWT_EXPIRE_HOURS:-24}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3001}
+      - RATE_LIMIT_REQUESTS=${RATE_LIMIT_REQUESTS:-100}
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-900}
+      - SOLANA_CLUSTER=${SOLANA_CLUSTER:-mainnet-beta}
+      - DEBUG_MODE=${DEBUG_MODE:-true}
+    networks:
+      - blizard
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+
+  app:
+    build: 
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: bl_app
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - blizard
+    restart: unless-stopped
+    volumes:
+      - ./app:/app
+
+volumes:
+  postgres_data:

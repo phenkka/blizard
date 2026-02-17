@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1440">
+  <title>WORLDBINDER — Backpack</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ====== BACKPACK SCREEN ====== -->
+  <div id="screen-backpack">
+
+    <!-- Background -->
+    <div class="game-bg"></div>
+
+    <div class="game-container">
+
+      <!-- Online Badge -->
+      <div class="online-badge">
+        <div class="online-dot"></div>
+        <span>ONLINE</span>
+        <span id="online-count">159</span>
+      </div>
+
+      <!-- Left Panel -->
+      <div class="left-panel">
+
+        <!-- Leaderboard -->
+        <div class="panel-card">
+          <h3>Leaderboard</h3>
+          <div id="leaderboard-list"></div>
+        </div>
+
+        <!-- Personal Stats -->
+        <div class="panel-card">
+          <h3>Battle Stats</h3>
+          <div id="battle-stats">
+            <div class="stats-row">
+              <span class="stats-label">Wins</span>
+              <span class="stats-value" id="stat-wins">0</span>
+            </div>
+            <div class="stats-row">
+              <span class="stats-label">Losses</span>
+              <span class="stats-value" id="stat-losses">0</span>
+            </div>
+            <div class="stats-row">
+              <span class="stats-label">Win Rate</span>
+              <span class="stats-value" id="stat-winrate">0%</span>
+            </div>
+            <div class="stats-row">
+              <span class="stats-label">Total Fights</span>
+              <span class="stats-value" id="stat-total">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- NFT Attack Bonus Table -->
+        <div class="panel-card" id="nft-bonus-table">
+          <!-- Filled by JS -->
+        </div>
+
+      </div>
+
+      <!-- Right Panel -->
+      <div class="right-panel">
+        <button class="btn-side" id="btn-upgrade-skills">⚔ UPGRADE SKILLS</button>
+        <button class="btn-side btn-logout" id="btn-logout">LOGOUT</button>
+      </div>
+
+      <!-- Center Content -->
+      <div class="center-content">
+
+        <!-- Player Info -->
+        <div class="player-info">
+          <div class="player-name" id="display-username">Warrior</div>
+          <div class="player-points"><span id="display-points">0</span> Points</div>
+        </div>
+
+        <!-- Section Header -->
+        <div class="section-header">
+          <h1>Backpack</h1>
+        </div>
+
+        <!-- NFT Grid -->
+        <div class="nft-grid" id="nft-grid"></div>
+
+        <!-- NFT Detail -->
+        <div class="nft-detail hidden" id="nft-detail">
+          <div class="nft-detail-header">
+            <div class="nft-frame-wrap nft-frame-small">
+              <img class="nft-frame-img" src="assets/frame.png" alt="frame">
+              <div class="nft-frame-inner">
+                <img id="detail-img" src="" alt="nft">
+              </div>
+            </div>
+            <div>
+              <h3 style="font-family:var(--font-heading);color:var(--gold-light);font-size:18px" id="detail-name"></h3>
+              <span class="nft-rarity" id="detail-rarity"></span>
+            </div>
+          </div>
+          <div id="detail-traits"></div>
+          <button class="btn-enter-arena" id="btn-enter-arena">⚔ ENTER THE ARENA</button>
+        </div>
+
+        <!-- Sacred Jackpot -->
+        <div class="jackpot-section">
+          <div class="jackpot-title">✦ SACRED JACKPOT ✦</div>
+          <div class="jackpot-amount">15 SOL</div>
+          <div class="jackpot-sub">Only 3 winners will share this sacred prize</div>
+        </div>
+
+        <!-- KOTH -->
+        <div class="koth-section">
+          <div class="koth-timer">
+            <div class="koth-timer-label">KOTH Resets In</div>
+            <div class="koth-timer-value" id="koth-timer">23:59:42</div>
+          </div>
+          <div class="koth-title">King of the Hill</div>
+          <div class="koth-podium" id="koth-podium"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== SKILL TREE SCREEN (scrollable) ====== -->
+  <div class="skill-tree-screen hidden" id="screen-skill-tree">
+    <div class="skill-tree-container">
+
+      <div class="skill-tree-header">
+        <button class="btn-back" id="btn-back-skills">← Back</button>
+        <h1>Skill Tree</h1>
+        <p>Burn tokens to upgrade your warrior's abilities</p>
+      </div>
+
+      <div class="skill-token-info">
+        <div class="token-balance-box">
+          <span class="token-label">Your Balance</span>
+          <span class="token-value"><span id="token-balance">0</span> TOKENS</span>
+        </div>
+        <div class="token-balance-box">
+          <span class="token-label">Cost per Level</span>
+          <span class="token-value">🔥 <span id="upgrade-cost">50,000</span></span>
+        </div>
+      </div>
+
+      <div class="skill-tree-grid" id="skill-tree-grid"></div>
+
+    </div>
+  </div>
+
+  <!-- ====== MATCHMAKING OVERLAY (centered) ====== -->
+  <div class="matchmaking-overlay hidden" id="overlay-matchmaking">
+    <!-- Phase 1: Searching -->
+    <div id="mm-searching" class="mm-phase">
+      <div class="matchmaking-text">Searching for opponent...</div>
+      <div class="matchmaking-spinner"></div>
+    </div>
+
+    <!-- Phase 2: Found -->
+    <div class="matchmaking-found hidden mm-phase" id="mm-found">
+      <h2>Opponent Found!</h2>
+      <p>Do you want to start the battle?</p>
+      <div class="matchmaking-buttons">
+        <button class="btn-yes" id="btn-mm-yes">YES</button>
+        <button class="btn-no" id="btn-mm-no">NO</button>
+      </div>
+    </div>
+
+    <!-- Phase 3: Countdown -->
+    <div class="hidden mm-phase" id="mm-countdown">
+      <div class="countdown-number" id="countdown-num">3</div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="config.js"></script>
+  <script src="js/phantom-connect.js"></script>
+  <script src="js/nft-scanner.js"></script>
+  <script src="js/token-burner.js"></script>
+  <script src="js/game.js"></script>
+
+</body>
+</html>

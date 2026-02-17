@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1440">
+  <title>WORLDBINDER</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ====== LANDING PAGE ====== -->
+  <div id="landing-page">
+
+    <!-- UnicornStudio Background -->
+    <div class="us-bg">
+      <div data-us-project="ctZP3mQXRFkeSeMJ3HqJ" style="width:1440px; height:900px"></div>
+    </div>
+
+    <!-- Online Badge -->
+    <div class="online-badge">
+      <div class="online-dot"></div>
+      <span>ONLINE</span>
+      <span id="online-count">159</span>
+    </div>
+
+    <!-- Main Content -->
+    <div class="landing-content">
+      <h1 class="landing-title">WORLDBINDER</h1>
+      <p class="landing-subtitle">Enter the arena &bull; Bind your fate</p>
+      <button class="btn-connect" id="btn-connect-wallet">CONNECT WALLET</button>
+      <span class="landing-network">SOLANA NETWORK</span>
+    </div>
+
+    <!-- Bottom Placeholders -->
+    <div class="bottom-bar">
+      <div class="placeholder-pill">CA &mdash; SOON</div>
+      <div class="placeholder-pill" id="pill-twitter">TWITTER &mdash; @WORLDBINDER</div>
+    </div>
+  </div>
+
+  <!-- ====== REGISTRATION MODAL ====== -->
+  <div class="modal-overlay hidden" id="modal-register">
+    <div class="modal-box">
+      <h2>Create Warrior</h2>
+      <p>Choose your name and avatar to enter the arena</p>
+
+      <div id="scan-status" class="scan-status hidden"></div>
+
+      <div class="modal-photo-upload" id="photo-upload">
+        <span id="photo-placeholder">+</span>
+        <img id="photo-preview" class="hidden" alt="avatar">
+      </div>
+      <input type="file" id="photo-input" accept="image/*" class="hidden">
+      <span class="modal-photo-label">Upload Photo</span>
+
+      <input class="modal-input" id="input-username" type="text" placeholder="Enter username..." maxlength="20">
+
+      <button class="btn-gold" id="btn-register" disabled>ENTER THE WORLD</button>
+    </div>
+  </div>
+
+  <!-- ====== NO NFT MODAL ====== -->
+  <div class="modal-overlay hidden" id="modal-no-nft">
+    <div class="modal-box">
+      <div class="no-nft-icon">⚠️</div>
+      <h2>No Warriors Found</h2>
+      <p>Unfortunately, there are no WorldBinder NFTs in your wallet.<br>
+         Acquire NFTs from our collection to enter the arena and fight!</p>
+      <a href="https://magiceden.io/" target="_blank" class="btn-gold" style="display:inline-block;text-decoration:none;margin-bottom:12px">
+        BUY ON MAGIC EDEN
+      </a>
+      <br>
+      <button class="btn-back" id="btn-close-no-nft">← Back</button>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/base58@2.0.0/lib/base58.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.91.6/lib/index.iife.min.js"></script>
+  <script src="js/phantom-connect.js"></script>
+  <script src="js/nft-scanner.js"></script>
+  <script src="js/landing.js"></script>
+
+  <!-- UnicornStudio Loader -->
+  <script>
+    !function(){var u=window.UnicornStudio;if(u&&u.init){if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",function(){u.init()})}else{u.init()}}else{window.UnicornStudio={isInitialized:!1};var i=document.createElement("script");i.src="https://cdn.jsdelivr.net/gh/hiunicornstudio/unicornstudio.js@v2.0.5/dist/unicornStudio.umd.js",i.onload=function(){if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",function(){UnicornStudio.init()})}else{UnicornStudio.init()}},(document.head||document.body).appendChild(i)}}();
+
+    /* Remove UnicornStudio watermark */
+    function removeUSBadge() {
+      document.querySelectorAll('a[href*="unicorn"], a[href*="Unicorn"]').forEach(function(el) { el.remove(); });
+    }
+    setTimeout(removeUSBadge, 500);
+    setTimeout(removeUSBadge, 2000);
+    new MutationObserver(removeUSBadge).observe(document.body, { childList: true, subtree: true });
+  </script>
+
+</body>
+</html>

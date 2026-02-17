@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1440">
+  <title>WORLDBINDER — Arena</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ====== ARENA SCREEN ====== -->
+  <div id="screen-arena">
+
+    <div class="arena-bg"></div>
+
+    <div class="arena-container">
+
+      <!-- Top Bar: HP bars + Timer -->
+      <div class="arena-top-bar">
+
+        <!-- Player HP -->
+        <div class="player-hp-bar">
+          <div class="hp-avatar">
+            <img id="arena-player-photo" src="" alt="you">
+          </div>
+          <div class="hp-info">
+            <div class="hp-name" id="arena-player-name">You</div>
+            <div class="hp-bar-outer">
+              <div class="hp-bar-inner" id="arena-player-hp" style="width:100%"></div>
+              <span class="hp-text" id="arena-player-hp-text">300 / 300</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Timer -->
+        <div class="arena-timer">
+          <div class="arena-timer-label">Match Timer</div>
+          <div class="arena-timer-value" id="arena-timer">20</div>
+        </div>
+
+        <!-- Opponent HP -->
+        <div class="player-hp-bar" style="flex-direction:row-reverse">
+          <div class="hp-avatar">
+            <img id="arena-opp-photo" src="" alt="opponent">
+          </div>
+          <div class="hp-info" style="text-align:right">
+            <div class="hp-name" id="arena-opp-name">Opponent</div>
+            <div class="hp-bar-outer">
+              <div class="hp-bar-inner" id="arena-opp-hp" style="width:100%"></div>
+              <span class="hp-text" id="arena-opp-hp-text">300 / 300</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ATK Bonus Badge -->
+      <div class="arena-bonus-badge hidden" id="arena-bonus-badge"></div>
+
+      <!-- Battle Field -->
+      <div class="battle-field">
+        <div class="battle-nft" id="player-nft-battle">
+          <div class="battle-nft-frame" id="player-capsule">
+            <img class="battle-frame-img" src="assets/frame.png" alt="frame">
+            <div class="battle-frame-inner">
+              <img id="player-battle-img" src="" alt="your nft">
+            </div>
+          </div>
+          <div class="battle-nft-label" id="player-battle-label">Your NFT</div>
+        </div>
+
+        <div class="vs-text">VS</div>
+
+        <div class="battle-nft" id="opp-nft-battle">
+          <div class="battle-nft-frame" id="opp-capsule">
+            <img class="battle-frame-img" src="assets/frame.png" alt="frame">
+            <div class="battle-frame-inner">
+              <img id="opp-battle-img" src="" alt="opponent nft">
+            </div>
+          </div>
+          <div class="battle-nft-label" id="opp-battle-label">Enemy NFT</div>
+        </div>
+      </div>
+
+      <!-- Skill Bar -->
+      <div class="skill-bar" id="skill-bar"></div>
+
+    </div>
+  </div>
+
+  <!-- ====== RESULT OVERLAY ====== -->
+  <div class="result-overlay hidden" id="overlay-result">
+    <div class="result-title" id="result-title">FLAWLESS VICTORY</div>
+    <div class="result-sub" id="result-sub">KEEP TRAINING</div>
+    <div class="result-buttons">
+      <button class="btn-yes" id="btn-play-again">PLAY AGAIN</button>
+      <button class="btn-no" id="btn-back-backpack">BACK TO BACKPACK</button>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/wallet.js"></script>
+  <script src="js/nft-scanner.js"></script>
+  <script src="js/battle.js"></script>
+
+</body>
+</html>

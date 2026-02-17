@@ -1,0 +1,261 @@
+
+1. ПЕРЕНЕСТИ СКАНИРОВАНИЕ NFT НА БЭКЕНД
+Сейчас nft-scanner.js вызывает Helius напрямую из браузера. Нужно перенести на сервер чтобы не светить API ключ.
+Фронтенд вызывает:
+POST /api/wallet/scan
+Body: { walletAddress: "..." }
+Ответ: { nfts: [...], attackBonus: 20 }
+Бэкенд делает:
+
+Вызывает Helius getAssetsByOwner с серверным API ключом
+Фильтрует по адресу коллекции: BeFtLwLtS9Rva12KrHKRMY1H5WoeM1Y2ULMnNJKopump
+Максимум 3 NFT возвращает
+Возвращает распарсенные объекты NFT (id, name, image, rarity, level, traits)
+
+2. АУТЕНТИФИКАЦИЯ ИГРОКОВ
+Сейчас используется sessionStorage. Заменить на нормальную авторизацию.
+Флоу авторизации:
+
+Игрок подключает Phantom → получает publicKey
+Фронтенд вызывает POST /api/auth/challenge → бэкенд возвращает nonce строку
+Фронтенд подписывает nonce через Phantom: window.solana.signMessage(nonce)
+Фронтенд вызывает POST /api/auth/verify с { publicKey, signature, nonce }
+Бэкенд проверяет подпись через @solana/web3.js → выдаёт JWT токен
+JWT хранится в localStorage, отправляется как Authorization: Bearer <token> на все запросы
+
+3. РЕГИСТРАЦИЯ И ПРОФИЛЬ ИГРОКА
+Заменить sessionStorage данные игрока на базу данных.
+Эндпоинты:
+POST   /api/player/register    { username, photo }
+GET    /api/player/me          → возвращает полный профиль
+PATCH  /api/player/me          → обновить профиль
+Схема игрока:
+id:            UUID
+wallet:        String (Solana pubkey)
+username:      String (уникальный, 2-20 символов)
+photo:         String (URL на сохранённый аватар)
+points:        Integer (по умолчанию 0)
+wins:          Integer (по умолчанию 0)
+losses:        Integer (по умолчанию 0)
+skills: {
+  bladeStrike:  { level: 1, maxLevel: 5 }
+  energyBurst:  { level: 0, maxLevel: 5 }
+  meteorRain:   { level: 0, maxLevel: 3 }
+  defense:      { level: 0, maxLevel: 5 }
+  healing:      { level: 0, maxLevel: 5 }
+}
+nfts:          JSON (кэш последнего скана)
+createdAt:     Timestamp
+lastLogin:     Timestamp
+4. ПРОКАЧКА СКИЛОВ (ВАЛИДАЦИЯ СЖИГАНИЯ ТОКЕНОВ)
+Транзакция сжигания происходит на фронте через Phantom. Бэкенд должен валидировать.
+Флоу:
+
+Фронтенд вызывает POST /api/skills/upgrade с { skillKey, txSignature }
+Бэкенд проверяет транзакцию ончейн:
+
+Подтверждает что tx финализирована
+Подтверждает что это burn инструкция для правильного токен минта
+Подтверждает что сумма сжигания >= 50 000 токенов
+Подтверждает что подписант совпадает с кошельком залогиненного игрока
+
+
+Если валидно → увеличить уровень скила в базе
+Если невалидно → отклонить
+
+Правила скейлинга скилов:
+
+Каждый уровень: +2 к урону, -0.5 секунды к кулдауну (минимум 0.5с)
+Стоимость за уровень: 50 000 токенов (сжигаются, не переводятся)
+
+Конфиг токена (обновить после деплоя):
+TOKEN_MINT:     "ВСТАВИТЬ_АДРЕС_МИНТА_ТОКЕНА"
+TOKEN_DECIMALS: 6
+BURN_AMOUNT:    50000
+5. МАТЧМЕЙКИНГ В РЕАЛЬНОМ ВРЕМЕНИ (WebSocket)
+Заменить фейковый setTimeout матчмейкинг на Socket.IO.
+Флоу:
+
+Игрок отправляет "queue:join" { nftId, playerData }
+Сервер матчит двух игроков из очереди
+Сервер отправляет "match:found" { opponentName, opponentNFT }
+Оба игрока отправляют "match:accept" или "match:decline"
+Если оба приняли → сервер отправляет "match:start" { matchId }
+Игроки переходят на arena.html с matchId
+
+Правила матчмейкинга:
+
+Очередь FIFO (первый пришёл — первый обслужен)
+Таймаут: 60 секунд → автоотмена если противник не найден
+Игрок может быть только в одной очереди одновременно
+
+6. БОЙ В РЕАЛЬНОМ ВРЕМЕНИ (WebSocket)
+Заменить локальный AI бой на серверный авторитарный бой. ВСЕ РАСЧЁТЫ НА СЕРВЕРЕ. Фронтенд только показывает визуал.
+Состояние боя (на сервере):
+matchId:      UUID
+player1:      { wallet, hp: 300, nft, skills, shieldActive, cooldowns }
+player2:      { wallet, hp: 300, nft, skills, shieldActive, cooldowns }
+timer:        20 секунд
+status:       "active" | "finished"
+startedAt:    Timestamp
+Ивенты:
+Клиент → Сервер:
+  "skill:use"       { matchId, skillKey }
+
+Сервер → Клиент:
+  "battle:state"    { полное обновление стейта }
+  "skill:executed"  { playerId, skillKey, damage, targetHP }
+  "battle:end"      { winner, loser, pointsAwarded }
+Сервер валидирует:
+
+Игрок владеет скилом (level > 0)
+Скил не на кулдауне
+Матч ещё активен
+Таймер не истёк
+Расчёт урона только на сервере (защита от читов)
+
+Формула урона:
+baseDamage = skill.baseDamage + (level - 1) * 2
+attackBonus = бонус от количества NFT (10%, 15% или 20%)
+finalDamage = floor(baseDamage * (1 + attackBonus / 100))
+
+Если у цели щит: finalDamage = floor(finalDamage * 0.3)
+Кулдауны (секунды):
+Blade Strike:  1.3 - (level-1) * 0.5   (мин 0.5)
+Energy Burst:  3.4 - (level-1) * 0.5   (мин 0.5)
+Meteor Rain:   8.0 - (level-1) * 0.5   (мин 0.5)
+Defense:       8.0 - (level-1) * 0.5   (мин 0.5)
+Healing:      11.0 - (level-1) * 0.5   (мин 0.5)
+Таблица скилов:
+Blade Strike  — damage — базовый урон 18  — мгновенный урон
+Energy Burst  — damage — базовый урон 55  — мгновенный урон
+Meteor Rain   — damage — базовый урон 83  — задержка 0.7с потом урон
+Defense       — shield — урон 0           — снижение урона 70% на 10 секунд
+Healing       — heal   — урон 0           — +20 HP/сек в течение 3 секунд (3 тика)
+Условие победы:
+
+HP противника дошло до 0 → мгновенная победа
+Таймер дошёл до 0 → побеждает тот у кого больше HP
+Равный HP при таймере 0 → игрок с большим количеством NFT получает преимущество (взвешенный рандом)
+
+Формула преимущества по NFT:
+winChance = 0.3 + (myNFTs / (myNFTs + oppNFTs)) * 0.4
+Бонусы атаки от количества NFT:
+1 NFT  = +10% к атаке
+2 NFTs = +15% к атаке
+3 NFTs = +20% к атаке
+7. ЛИДЕРБОРД
+Заменить захардкоженный лидерборд на реальные данные из базы.
+Эндпоинты:
+GET /api/leaderboard          → топ 20 по очкам
+GET /api/leaderboard/koth     → топ 3 King of the Hill
+Система очков:
+
+Победа: +100 очков
+Поражение: +0 очков
+В будущем: бонусные очки за серии побед (опционально)
+
+Таймер KOTH:
+
+Сбрасывается каждые 24 часа в полночь UTC
+Топ 3 на момент сброса делят Sacred Jackpot
+
+8. SACRED JACKPOT (15 SOL)
+GET /api/jackpot → { amount, winners, nextReset }
+Логика:
+
+Призовой фонд: 15 SOL (или настраиваемый)
+При сбросе KOTH → топ 3 игрока делят приз
+Распределение: 1 место = 50%, 2 место = 30%, 3 место = 20%
+Выплата через серверный кошелёк подписывающий Solana трансфер
+Сброс очков лидерборда после выплаты
+
+9. ОНЛАЙН СЧЁТЧИК
+Заменить фейковый счётчик на реальное количество WebSocket подключений.
+Сервер считает: connectedSockets.size
+Отправляет всем: "online:count" { count } каждые 5 секунд
+10. ИСТОРИЯ БОЁВ
+POST /api/battles             → сохранить результат матча
+GET  /api/battles/my          → история боёв игрока
+Схема записи боя:
+matchId:        UUID
+player1Wallet:  String
+player2Wallet:  String
+player1NFT:     String (mint address)
+player2NFT:     String (mint address)
+winner:         String (wallet)
+player1HP:      Integer (оставшееся)
+player2HP:      Integer (оставшееся)
+duration:       Integer (секунды)
+createdAt:      Timestamp
+
+ТАБЛИЦА ВСЕХ API ЭНДПОИНТОВ
+POST   /api/auth/challenge       Без авторизации    Получить nonce для подписи
+POST   /api/auth/verify          Без авторизации    Проверить подпись → выдать JWT
+POST   /api/wallet/scan          С авторизацией     Сканировать кошелёк на NFT
+POST   /api/player/register      С авторизацией     Создать профиль игрока
+GET    /api/player/me            С авторизацией     Получить профиль игрока
+PATCH  /api/player/me            С авторизацией     Обновить профиль
+POST   /api/skills/upgrade       С авторизацией     Сжечь токены + прокачать скил
+GET    /api/leaderboard          Без авторизации    Топ 20 игроков
+GET    /api/leaderboard/koth     Без авторизации    Топ 3 KOTH
+GET    /api/jackpot              Без авторизации    Инфо о джекпоте
+GET    /api/battles/my           С авторизацией     История боёв игрока
+
+ТАБЛИЦА ВСЕХ WEBSOCKET ИВЕНТОВ
+Клиент → Сервер:
+  queue:join        { nftId }                     Встать в очередь
+  queue:leave       {}                            Покинуть очередь
+  match:accept      { matchId }                   Принять бой
+  match:decline     { matchId }                   Отклонить бой
+  skill:use         { matchId, skillKey }         Использовать скил
+
+Сервер → Клиент:
+  queue:status      { position, estimatedWait }   Статус в очереди
+  match:found       { matchId, opponent }         Противник найден
+  match:start       { matchId, battleState }      Бой начался
+  battle:state      { полный стейт }              Обновление состояния боя
+  skill:executed    { who, skill, damage, hps }   Скил выполнен
+  battle:end        { winner, loser, points }     Бой окончен
+  online:count      { count }                     Количество онлайн
+
+ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ
+PORT=3000
+NODE_ENV=production
+JWT_SECRET=<рандомный-256-бит-ключ>
+CORS_ORIGIN=https://worldofbinder.co
+
+DATABASE_URL=postgresql://user:pass@host:5432/worldbinder
+
+HELIUS_API_KEY=2b51d0c8-c911-4ffe-a74a-15c2633620b3
+SOLANA_RPC=https://mainnet.helius-rpc.com/?api-key=2b51d0c8-c911-4ffe-a74a-15c2633620b3
+COLLECTION_ADDRESS=BeFtLwLtS9Rva12KrHKRMY1H5WoeM1Y2ULMnNJKopump
+TOKEN_MINT=<ВСТАВИТЬ_КОГДА_ЗАДЕПЛОЯТ>
+TOKEN_DECIMALS=6
+BURN_COST_PER_LEVEL=50000
+
+JACKPOT_WALLET_PRIVATE_KEY=<серверный-кошелёк-для-выплат>
+JACKPOT_AMOUNT_SOL=15
+
+ДЕПЛОЙ
+
+Фронтенд → статика на Vercel/Netlify/Cloudflare Pages на worldofbinder.co
+Бэкенд → API + WebSocket на Railway/Render/VPS на api.worldofbinder.co
+База данных → управляемый PostgreSQL (Supabase, Neon или Railway)
+SSL → обязателен для обоих доменов (Phantom не работает через HTTP)
+CORS → разрешить только https://worldofbinder.co
+
+
+ЧТО МЕНЯТЬ НА ФРОНТЕ КОГДА БЭКЕНД ГОТОВ
+В nft-scanner.js — заменить прямой вызов Helius на вызов бэкенда:
+jsfetch('https://api.worldofbinder.co/api/wallet/scan', { ... })
+В game.js — заменить sessionStorage на API вызовы:
+jsconst player = await fetch('/api/player/me', { headers: authHeaders }).then(r => r.json());
+В battle.js — заменить локальный AI на WebSocket:
+jsconst socket = io('https://api.worldofbinder.co', { auth: { token } });
+socket.emit('skill:use', { matchId, skillKey });
+socket.on('battle:state', (state) => { /* обновить UI */ });
+В landing.js — добавить флоу авторизации через подпись:
+js// 1. Получить challenge
+// 2. Подписать через Phantom
+// 3. Отправить на верификацию и получить JWT

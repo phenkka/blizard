@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WORLDBINDER Debug</title>
+</head>
+<body>
+    <h1>WORLDBINDER Debug Page</h1>
+    <div id="status">Loading...</div>
+    <button onclick="testConnection()">Test Connection</button>
+    <button onclick="testTokens()">Test Tokens Only</button>
+    <div id="result"></div>
+
+    <script src="config.js"></script>
+    <script src="js/phantom-connect.js"></script>
+    <script>
+        console.log('Debug page loaded');
+        
+        function updateStatus(message) {
+            document.getElementById('status').innerHTML = message;
+        }
+        
+        function updateResult(message) {
+            document.getElementById('result').innerHTML = message;
+        }
+        
+        // Check what's loaded
+        setTimeout(() => {
+            const checks = {
+                'window.WORLDBINDER_CONFIG': !!window.WORLDBINDER_CONFIG,
+                'window.PhantomConnect': !!window.PhantomConnect,
+                'window.solana': !!window.solana,
+                'window.solana.isPhantom': !!(window.solana && window.solana.isPhantom)
+            };
+            
+            updateStatus('<pre>' + JSON.stringify(checks, null, 2) + '</pre>');
+        }, 1000);
+        
+        async function testConnection() {
+            updateResult('Testing connection...');
+            
+            if (!window.PhantomConnect) {
+                updateResult('❌ PhantomConnect not loaded');
+                return;
+            }
+            
+            if (!window.solana || !window.solana.isPhantom) {
+                updateResult('❌ Phantom wallet not installed');
+                return;
+            }
+            
+            try {
+                const result = await window.PhantomConnect.connect();
+                updateResult('✅ Connection result: ' + JSON.stringify(result, null, 2));
+                
+                // Test token balance
+                const tokenBalance = await window.PhantomConnect.getTokenBalance();
+                updateResult(prev => prev + '<br><br>💰 Token balance: ' + tokenBalance.toLocaleString());
+                
+                // Test NFT scan
+                const nfts = await window.NFTScanner.scan(result.publicKey);
+                updateResult(prev => prev + '<br>🎴 NFTs found: ' + nfts.length);
+                
+                // Check access
+                const hasAccess = nfts.length > 0 || tokenBalance >= 20000;
+                updateResult(prev => prev + '<br>🔓 Access granted: ' + (hasAccess ? 'YES' : 'NO'));
+                
+            } catch (error) {
+                updateResult('❌ Connection error: ' + error.message);
+            }
+        }
+        
+        async function testTokens() {
+            updateResult('Testing token balance...');
+            
+            if (!window.PhantomConnect) {
+                updateResult('❌ PhantomConnect not loaded');
+                return;
+            }
+            
+            try {
+                const tokenBalance = await window.PhantomConnect.getTokenBalance();
+                updateResult('💰 Token balance: ' + tokenBalance.toLocaleString());
+                
+                if (tokenBalance >= 20000) {
+                    updateResult(prev => prev + '<br>✅ Access granted via tokens!');
+                } else {
+                    updateResult(prev => prev + '<br>❌ Insufficient tokens for access');
+                }
+            } catch (error) {
+                updateResult('❌ Token check error: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>

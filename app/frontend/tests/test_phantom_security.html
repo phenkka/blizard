@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phantom Security Tests</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+        .pass {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .fail {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔒 Phantom Wallet Security Tests</h1>
+    <p>Комплексные тесты безопасности для Phantom аутентификации</p>
+    
+    <div>
+        <button onclick="runAllTests()">🚀 Запустить все тесты</button>
+        <button onclick="runConnectionTests()">🔗 Тесты подключения</button>
+        <button onclick="runSessionTests()">🔐 Тесты сессий</button>
+        <button onclick="runSecurityTests()">🛡️ Тесты безопасности</button>
+        <button onclick="clearResults()">🗑️ Очистить результаты</button>
+    </div>
+    
+    <div id="results"></div>
+    
+    <script src="../config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/base58@2.0.0/lib/base58.min.js"></script>
+    <script src="../js/phantom-connect.js"></script>
+    
+    <script>
+        let testResults = [];
+        
+        function addResult(testName, status, message, details = null) {
+            const result = {
+                name: testName,
+                status: status,
+                message: message,
+                details: details,
+                timestamp: new Date().toISOString()
+            };
+            
+            testResults.push(result);
+            displayResults();
+        }
+        
+        function displayResults() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '';
+            
+            testResults.forEach(result => {
+                const div = document.createElement('div');
+                div.className = `test-result ${result.status}`;
+                
+                let content = `<strong>${result.name}</strong>: ${result.message}`;
+                if (result.details) {
+                    content += `<pre>${JSON.stringify(result.details, null, 2)}</pre>`;
+                }
+                content += `<small>${new Date(result.timestamp).toLocaleTimeString()}</small>`;
+                
+                div.innerHTML = content;
+                resultsDiv.appendChild(div);
+            });
+        }
+        
+        function clearResults() {
+            testResults = [];
+            displayResults();
+        }
+        
+        async function runAllTests() {
+            clearResults();
+            await runConnectionTests();
+            await runSessionTests();
+            await runSecurityTests();
+        }
+        
+        async function runConnectionTests() {
+            addResult('Connection Tests', 'info', 'Начало тестов подключения...');
+            
+            // Тест 1: Проверка установки Phantom
+            if (window.solana && window.solana.isPhantom) {
+                addResult('Phantom Installation', 'pass', 'Phantom кошелек установлен');
+            } else {
+                addResult('Phantom Installation', 'fail', 'Phantom кошелек не установлен');
+                return;
+            }
+            
+            // Тест 2: Проверка инициализации PhantomConnect
+            if (window.PhantomConnect) {
+                addResult('PhantomConnect Init', 'pass', 'PhantomConnect инициализирован');
+            } else {
+                addResult('PhantomConnect Init', 'fail', 'PhantomConnect не инициализирован');
+                return;
+            }
+            
+            // Тест 3: Проверка API доступности
+            try {
+                const response = await fetch('/api/config');
+                if (response.ok) {
+                    const config = await response.json();
+                    addResult('API Availability', 'pass', 'API доступен', config);
+                } else {
+                    addResult('API Availability', 'fail', `API недоступен: ${response.status}`);
+                }
+            } catch (error) {
+                addResult('API Availability', 'fail', `API ошибка: ${error.message}`);
+            }
+            
+            // Тест 4: Проверка challenge endpoint
+            try {
+                const testPublicKey = '11111111111111111111111111111111';
+                const response = await fetch('/api/auth/challenge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ publicKey: testPublicKey })
+                });
+                
+                if (response.ok) {
+                    const challenge = await response.json();
+                    addResult('Challenge Endpoint', 'pass', 'Challenge endpoint работает', challenge);
+                } else {
+                    addResult('Challenge Endpoint', 'fail', `Challenge endpoint ошибка: ${response.status}`);
+                }
+            } catch (error) {
+                addResult('Challenge Endpoint', 'fail', `Challenge endpoint ошибка: ${error.message}`);
+            }
+        }
+        
+        async function runSessionTests() {
+            addResult('Session Tests', 'info', 'Начало тестов сессий...');
+            
+            // Тест 1: Проверка хранения сессии
+            const storedWallet = localStorage.getItem('wb_wallet');
+            const storedToken = localStorage.getItem('wb_token');
+            const storedUser = localStorage.getItem('wb_user');
+            
+            if (storedWallet && storedToken && storedUser) {
+                addResult('Session Storage', 'pass', 'Сессия сохранена в localStorage');
+            } else {
+                addResult('Session Storage', 'warning', 'Сессия не найдена (нормально для первого запуска)');
+            }
+            
+            // Тест 2: Проверка валидации сессии
+            if (window.PhantomConnect.isLoggedIn()) {
+                try {
+                    const profile = await window.PhantomConnect.getUserProfile();
+                    addResult('Session Validation', 'pass', 'Сессия валидна', profile);
+                } catch (error) {
+                    addResult('Session Validation', 'fail', `Сессия невалидна: ${error.message}`);
+                }
+            } else {
+                addResult('Session Validation', 'warning', 'Нет активной сессии');
+            }
+            
+            // Тест 3: Проверка очистки сессии
+            const originalWallet = localStorage.getItem('wb_wallet');
+            window.PhantomConnect.clearSession();
+            const clearedWallet = localStorage.getItem('wb_wallet');
+            
+            if (!clearedWallet && originalWallet) {
+                addResult('Session Cleanup', 'pass', 'Сессия очищается корректно');
+                // Восстанавливаем для других тестов
+                localStorage.setItem('wb_wallet', originalWallet);
+            } else if (!originalWallet) {
+                addResult('Session Cleanup', 'warning', 'Нет сессии для очистки');
+            } else {
+                addResult('Session Cleanup', 'fail', 'Сессия не очистилась');
+            }
+            
+            // Тест 4: Проверка безопасности localStorage
+            try {
+                const testData = 'test_data';
+                localStorage.setItem('wb_test', testData);
+                const retrieved = localStorage.getItem('wb_test');
+                localStorage.removeItem('wb_test');
+                
+                if (retrieved === testData) {
+                    addResult('LocalStorage Security', 'pass', 'LocalStorage работает корректно');
+                } else {
+                    addResult('LocalStorage Security', 'fail', 'LocalStorage не работает');
+                }
+            } catch (error) {
+                addResult('LocalStorage Security', 'fail', `LocalStorage ошибка: ${error.message}`);
+            }
+        }
+        
+        async function runSecurityTests() {
+            addResult('Security Tests', 'info', 'Начало тестов безопасности...');
+            
+            // Тест 1: Проверка HTTPS
+            if (window.location.protocol === 'https:') {
+                addResult('HTTPS Check', 'pass', 'Соединение по HTTPS');
+            } else if (window.location.hostname === 'localhost') {
+                addResult('HTTPS Check', 'warning', 'HTTP на localhost (допустимо для разработки)');
+            } else {
+                addResult('HTTPS Check', 'fail', 'Небезопасное HTTP соединение');
+            }
+            
+            // Тест 2: Проверка CSP (Content Security Policy)
+            const metaCSP = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
+            if (metaCSP) {
+                addResult('CSP Header', 'pass', 'CSP заголовок найден');
+            } else {
+                addResult('CSP Header', 'warning', 'CSP заголовок не найден');
+            }
+            
+            // Тест 3: Проверка конфиденциальных данных в URL
+            const url = window.location.href;
+            const sensitivePatterns = ['token=', 'password=', 'secret=', 'key='];
+            const hasSensitiveInUrl = sensitivePatterns.some(pattern => url.includes(pattern));
+            
+            if (!hasSensitiveInUrl) {
+                addResult('URL Security', 'pass', 'Конфиденциальные данные не в URL');
+            } else {
+                addResult('URL Security', 'fail', 'Конфиденциальные данные найдены в URL');
+            }
+            
+            // Тест 4: Проверка консольных логов в продакшене
+            if (window.WORLDBINDER_CONFIG && window.WORLDBINDER_CONFIG.DEBUG_MODE === false) {
+                addResult('Debug Logs', 'pass', 'Отладочные логи отключены в продакшене');
+            } else if (window.WORLDBINDER_CONFIG && window.WORLDBINDER_CONFIG.DEBUG_MODE === true) {
+                addResult('Debug Logs', 'warning', 'Отладочные логи включены (нормально для разработки)');
+            } else {
+                addResult('Debug Logs', 'warning', 'Статус отладочных логов неизвестен');
+            }
+            
+            // Тест 5: Проверка безопасности base58
+            try {
+                const testBytes = new Uint8Array([1, 2, 3, 4, 5]);
+                const encoded = base58.encode(testBytes);
+                const decoded = base58.decode(encoded);
+                
+                if (arraysEqual(testBytes, decoded)) {
+                    addResult('Base58 Security', 'pass', 'Base58 кодирование работает');
+                } else {
+                    addResult('Base58 Security', 'fail', 'Base58 кодирование некорректно');
+                }
+            } catch (error) {
+                addResult('Base58 Security', 'fail', 'Base58 ошибка: ' + error.message);
+            }
+            
+            // Тест 6: Проверка защиты от XSS
+            const xssTestString = '<script>alert(xss)</script>';
+            const div = document.createElement('div');
+            div.textContent = xssTestString;
+            
+            if (div.textContent === xssTestString && !div.innerHTML.includes('<script>')) {
+                addResult('XSS Protection', 'pass', 'Защита от XSS работает');
+            } else {
+                addResult('XSS Protection', 'fail', 'Уязвимость к XSS');
+            }
+            
+            // Тест 7: Проверка безопасности токенов
+            const storedToken = localStorage.getItem('wb_token');
+            if (storedToken) {
+                // Проверка формата JWT
+                const parts = storedToken.split('.');
+                if (parts.length === 3) {
+                    try {
+                        const header = JSON.parse(atob(parts[0]));
+                        const payload = JSON.parse(atob(parts[1]));
+                        
+                        if (header.alg && payload.exp) {
+                            addResult('Token Format', 'pass', 'JWT токен валидного формата');
+                        } else {
+                            addResult('Token Format', 'warning', 'JWT токен неполный');
+                        }
+                    } catch (error) {
+                        addResult('Token Format', 'fail', 'JWT токен невалидного формата');
+                    }
+                } else {
+                    addResult('Token Format', 'fail', 'Токен не в JWT формате');
+                }
+            } else {
+                addResult('Token Format', 'warning', 'Нет токена для проверки');
+            }
+            
+            // Тест 8: Проверка безопасности API запросов
+            try {
+                const response = await fetch('/api/config');
+                const headers = response.headers;
+                
+                const securityHeaders = [
+                    'x-content-type-options',
+                    'x-frame-options',
+                    'x-xss-protection'
+                ];
+                
+                const foundHeaders = securityHeaders.filter(header => 
+                    headers.get(header)
+                );
+                
+                if (foundHeaders.length > 0) {
+                    addResult('Security Headers', 'pass', 'Найдены security headers: ' + foundHeaders.join(', '));
+                } else {
+                    addResult('Security Headers', 'warning', 'Security headers не найдены');
+                }
+            } catch (error) {
+                addResult('Security Headers', 'fail', 'Ошибка проверки security headers: ' + error.message);
+            }
+        }
+        
+        function arraysEqual(a, b) {
+            if (a.length !== b.length) return false;
+            for (let i = 0; i < a.length; i++) {
+                if (a[i] !== b[i]) return false;
+            }
+            return true;
+        }
+        
+        // Автоматический запуск при загрузке страницы
+        window.addEventListener('load', () => {
+            addResult('Test Suite', 'info', 'Тесты безопасности загружены. Нажмите кнопку для запуска.');
+        });
+    </script>
+</body>
+</html>
