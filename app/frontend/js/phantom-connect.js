@@ -272,6 +272,16 @@ class PhantomConnectManager {
         // Token expired, clear session
         this.clearSession();
       }
+      
+      // Обработка ошибок валидации
+      if (response.status === 422 && errorData.errors) {
+        const errors = errorData.errors.map(err => {
+          const field = err.loc ? err.loc[err.loc.length - 1] : 'field';
+          return `${field}: ${err.msg}`;
+        }).join(', ');
+        throw new Error(`Validation error: ${errors}`);
+      }
+      
       throw new Error(errorData.detail || `HTTP ${response.status}`);
     }
 
@@ -307,68 +317,11 @@ class PhantomConnectManager {
         return 0;
       }
 
-      // Use Helius RPC for better reliability
-      const HELIUS_RPC = 'https://mainnet.helius-rpc.com/?api-key=2b51d0c8-c911-4ffe-a74a-15c2633620b3';
-      
-      // Try different ways to access Web3
-      let Web3 = null;
-      
-      console.log('Solana object structure:', Object.keys(solana));
-      
-      if (typeof solana !== 'undefined' && solana.Web3) {
-        Web3 = solana.Web3;
-        console.log('Found solana.Web3');
-      } else if (typeof window.solana !== 'undefined' && window.solana.web3) {
-        Web3 = window.solana.web3;
-        console.log('Found window.solana.web3');
-      } else if (typeof window.Web3 !== 'undefined') {
-        Web3 = window.Web3;
-        console.log('Found window.Web3');
-      } else if (typeof solana !== 'undefined' && typeof solana.Connection === 'function') {
-        // Try to use solana directly
-        Web3 = solana;
-        console.log('Using solana object directly');
-      }
-
-      if (!Web3) {
-        console.error('Solana Web3 not available. Using direct Helius API call...');
-        return await this.getTokenBalanceDirect(tokenMint);
-      }
-
-      console.log('Using Web3 from:', Web3 === solana.Web3 ? 'solana.Web3' : 'other source');
-
-      const connection = new Web3.Connection(HELIUS_RPC, 'confirmed');
-
-      const publicKey = new Web3.PublicKey(window.solana.publicKey.toString());
-      const tokenMintPubkey = new Web3.PublicKey(tokenMint);
-
-      console.log('Checking token balance for:', publicKey.toString());
+      console.log('Getting token balance for:', window.solana.publicKey.toString());
       console.log('Token mint:', tokenMint);
-      console.log('Using Helius RPC');
 
-      // Get token accounts
-      const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
-        publicKey,
-        { mint: tokenMintPubkey },
-        { commitment: 'confirmed' }
-      );
-
-      console.log('Token accounts found:', tokenAccounts.value.length);
-
-      if (tokenAccounts.value.length === 0) {
-        return 0;
-      }
-
-      // Calculate total balance (handles multiple token accounts)
-      let totalBalance = 0;
-      for (const account of tokenAccounts.value) {
-        const balance = account.account.data.parsed.info.tokenAmount.uiAmount || 0;
-        totalBalance += balance;
-        console.log('Account balance:', balance);
-      }
-
-      console.log('Total balance:', totalBalance);
-      return totalBalance;
+      // Use direct API call for reliability
+      return await this.getTokenBalanceDirect(tokenMint);
     } catch (error) {
       console.error('Failed to get token balance:', error);
       return 0;
@@ -383,12 +336,18 @@ class PhantomConnectManager {
         jsonrpc: "2.0",
         id: 1,
         method: "getTokenAccountsByOwner",
-        params: {
-          owner: window.solana.publicKey.toString(),
-          mint: tokenMint,
-          encoding: "jsonParsed"
-        }
+        params: [
+          window.solana.publicKey.toString(),
+          {
+            mint: tokenMint
+          },
+          {
+            encoding: "jsonParsed"
+          }
+        ]
       };
+
+      console.log('Fetching token balance via direct API for:', window.solana.publicKey.toString());
 
       const response = await fetch(HELIUS_RPC, {
         method: 'POST',
@@ -398,6 +357,11 @@ class PhantomConnectManager {
         body: JSON.stringify(requestBody)
       });
 
+      if (!response.ok) {
+        console.error('Helius API HTTP error:', response.status, response.statusText);
+        return 0;
+      }
+
       const data = await response.json();
       
       if (data.error) {
@@ -405,8 +369,8 @@ class PhantomConnectManager {
         return 0;
       }
 
-      if (!data.result || data.result.value.length === 0) {
-        console.log('No token accounts found');
+      if (!data.result || !data.result.value || data.result.value.length === 0) {
+        console.log('No token accounts found for this token');
         return 0;
       }
 

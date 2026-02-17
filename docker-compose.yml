@@ -10,26 +10,16 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/01_init.sql
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5433:5432"
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-lab}" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-blizard}" ]
       interval: 5s
       timeout: 5s
       retries: 5
     environment:
-      - DB_HOST=${POSTGRES_HOST:-db}
-      - DB_PORT=${POSTGRES_PORT:-5432}
-      - DB_NAME=${POSTGRES_DB:-blizard}
-      - DB_USER=${POSTGRES_USER:-admin}
-      - DB_PASSWORD=${POSTGRES_PASSWORD:-12345}
-      - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-in-production_make_it_long_and_random}
-      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
-      - JWT_EXPIRE_HOURS=${JWT_EXPIRE_HOURS:-24}
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3001}
-      - RATE_LIMIT_REQUESTS=${RATE_LIMIT_REQUESTS:-100}
-      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-900}
-      - SOLANA_CLUSTER=${SOLANA_CLUSTER:-mainnet-beta}
-      - DEBUG_MODE=${DEBUG_MODE:-true}
+      - POSTGRES_USER=${POSTGRES_USER:-admin}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-12345}
+      - POSTGRES_DB=${POSTGRES_DB:-blizard}
     networks:
       - blizard
     restart: unless-stopped

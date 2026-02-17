@@ -1,8 +1,8 @@
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     wallet_address VARCHAR(44) UNIQUE NOT NULL,
-    username VARCHAR(50),
-    avatar_url VARCHAR(500),
+    username VARCHAR(20),
+    avatar_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     last_login TIMESTAMP WITH TIME ZONE
@@ -77,6 +77,7 @@ INSERT INTO skills (name, description, required_level) VALUES
 ('Shadow Dash', 'Evade attacks and counter', 5);
 
 CREATE INDEX IF NOT EXISTS idx_users_wallet ON users(wallet_address);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_user_nfts_user_id ON user_nfts(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_tokens_user_id ON user_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_leaderboard_points ON leaderboard(points DESC);

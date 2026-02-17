@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, validator
 from pydantic_settings import BaseSettings
 import psycopg2
@@ -41,7 +42,7 @@ class Settings(BaseSettings):
     jwt_expire_hours: int = 24
     
     # Безопасность
-    frontend_url: str = "http://localhost:3001"
+    frontend_url: str = "http://localhost:3000"
     rate_limit_requests: int = 100
     rate_limit_window: int = 900  # 15 минут
     
@@ -79,8 +80,32 @@ class ChallengeResponse(BaseModel):
 
 class UserProfile(BaseModel):
     """Профиль пользователя"""
-    username: Optional[str] = Field(None, min_length=2, max_length=50)
-    avatarUrl: Optional[str] = Field(None, max_length=500)
+    username: Optional[str] = Field(None, min_length=2, max_length=20, pattern=r'^[a-zA-Z0-9_-]+$')
+    avatarUrl: Optional[str] = Field(None, max_length=5000000)
+    
+    @validator('username')
+    def validate_username(cls, v):
+        if v is None:
+            return v
+        # Только буквы, цифры, подчеркивание и дефис
+        if not v.replace('_', '').replace('-', '').isalnum():
+            raise ValueError('Username can only contain letters, numbers, underscores and hyphens')
+        # Не может начинаться с цифры или спецсимвола
+        if not v[0].isalpha():
+            raise ValueError('Username must start with a letter')
+        return v
+    
+    @validator('avatarUrl')
+    def validate_avatar(cls, v):
+        if v is None:
+            return v
+        # Проверка что это base64 изображение
+        if not v.startswith('data:image/'):
+            raise ValueError('Avatar must be a valid base64 image')
+        # Проверка размера (примерно 2МБ после base64 = ~2.7МБ в base64)
+        if len(v) > 2800000:  # ~2MB image = ~2.8MB base64
+            raise ValueError('Avatar size exceeds 2MB limit')
+        return v
 
 class NFTData(BaseModel):
     """Данные NFT"""
@@ -283,11 +308,31 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Обработчик ошибок валидации
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.warning(f"Validation error: {exc.errors()}")
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "detail": "Validation error",
+            "errors": exc.errors()
+        }
+    )
+
 # Middleware
 app.middleware("http")(rate_limit_middleware)
+
+# CORS - разрешить запросы с фронтенда
+allowed_origins = [
+    settings.frontend_url,
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -455,7 +500,7 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
             FROM users 
             WHERE wallet_address = %s
         """
-        user_result = db.execute_query(user_query, (current_user["wallet_address"],), fetch="one")
+        user_result = db.execute_query(user_query, (current_user["walletAddress"],), fetch="one")
         
         if not user_result:
             # Создание нового пользователя
@@ -466,7 +511,7 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
             """
             user_result = db.execute_query(
                 insert_query, 
-                (current_user["wallet_address"], datetime.utcnow(), datetime.utcnow()),
+                (current_user["walletAddress"], datetime.utcnow(), datetime.utcnow()),
                 fetch="one"
             )
         
@@ -495,8 +540,29 @@ async def update_profile(
 ):
     """Обновление профиля пользователя"""
     try:
+        logger.info(f"Updating profile for user: {current_user['walletAddress']}")
+        
         db = Database()
         db.connect()
+        
+        # Проверка на уникальность имени пользователя
+        if profile_data.username:
+            check_query = """
+                SELECT id FROM users 
+                WHERE username = %s AND wallet_address != %s
+            """
+            existing = db.execute_query(
+                check_query,
+                (profile_data.username, current_user["walletAddress"]),
+                fetch="one"
+            )
+            
+            if existing:
+                db.close()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Username already taken"
+                )
         
         update_query = """
             UPDATE users 
@@ -507,11 +573,20 @@ async def update_profile(
         
         result = db.execute_query(
             update_query,
-            (profile_data.username, profile_data.avatarUrl, datetime.utcnow(), current_user["wallet_address"]),
+            (profile_data.username, profile_data.avatarUrl, datetime.utcnow(), current_user["walletAddress"]),
             fetch="one"
         )
         
+        if not result:
+            db.close()
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
         db.close()
+        
+        logger.info(f"Profile updated successfully for user: {current_user['walletAddress']}")
         
         return UserResponse(
             id=result["id"],
@@ -522,11 +597,13 @@ async def update_profile(
             last_login=result["last_login"]
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Profile update error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update profile"
+            detail=f"Failed to update profile: {str(e)}"
         )
 
 @app.post("/api/user/nfts")
@@ -541,7 +618,7 @@ async def add_nft(
         
         # Получение ID пользователя
         user_query = "SELECT id FROM users WHERE wallet_address = %s"
-        user_result = db.execute_query(user_query, (current_user["wallet_address"],), fetch="one")
+        user_result = db.execute_query(user_query, (current_user["walletAddress"],), fetch="one")
         
         if not user_result:
             raise HTTPException(

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=1440">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>WORLDBINDER</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -13,7 +13,7 @@
 
     <!-- UnicornStudio Background -->
     <div class="us-bg">
-      <div data-us-project="ctZP3mQXRFkeSeMJ3HqJ" style="width:1440px; height:900px"></div>
+      <div data-us-project="ctZP3mQXRFkeSeMJ3HqJ" style="width:100%; height:100%"></div>
     </div>
 
     <!-- Online Badge -->
@@ -53,7 +53,7 @@
       <input type="file" id="photo-input" accept="image/*" class="hidden">
       <span class="modal-photo-label">Upload Photo</span>
 
-      <input class="modal-input" id="input-username" type="text" placeholder="Enter username..." maxlength="20">
+      <input class="modal-input" id="input-username" type="text" placeholder="Enter username (letters, numbers, _ -)..." maxlength="20" pattern="[a-zA-Z][a-zA-Z0-9_-]*">
 
       <button class="btn-gold" id="btn-register" disabled>ENTER THE WORLD</button>
     </div>
