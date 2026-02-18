@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WORLDBINDER — Simple Security Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #1a1a1a; color: white; }
+        .test-box { margin: 20px 0; padding: 20px; border: 2px solid #333; border-radius: 8px; background: #2a2a2a; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; font-weight: bold; }
+        .pass { background: #4CAF50; color: white; }
+        .fail { background: #f44336; color: white; }
+        .warning { background: #ff9800; color: white; }
+        button { padding: 10px 20px; margin: 5px; background: #4CAF50; color: white; border: none; cursor: pointer; border-radius: 5px; }
+        button:hover { background: #45a049; }
+        .result { margin: 10px 0; padding: 10px; background: #333; border-radius: 5px; }
+        pre { background: #1a1a1a; padding: 10px; border-radius: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔒 WORLDBINDER Security Test</h1>
+    <p>Testing authentication bypass protection</p>
+
+    <div class="test-box">
+        <h2>📋 Current Authentication Status</h2>
+        <div id="auth-status" class="status">Checking...</div>
+        
+        <h2>🧪 Test Protection</h2>
+        <button onclick="testProtection()">Test Auth Bypass</button>
+        <div id="test-result" class="result"></div>
+        
+        <h2>🔍 Manual Tests</h2>
+        <button onclick="clearAuth()">Clear Authentication</button>
+        <button onclick="checkPages()">Check Page Protection</button>
+        <div id="manual-result" class="result"></div>
+    </div>
+
+    <script>
+        function checkAuthStatus() {
+            const token = localStorage.getItem('wb_token');
+            const user = localStorage.getItem('wb_user');
+            const wallet = localStorage.getItem('wb_wallet');
+            
+            let status = '<div class="pass">✅ Authentication Data Found:</div>';
+            status += `<br>🎫 Token: ${token ? 'Present' : 'Missing'}`;
+            status += `<br>👤 User: ${user ? 'Present' : 'Missing'}`;
+            status += `<br>👛 Wallet: ${wallet ? 'Present' : 'Missing'}`;
+            
+            if (token) {
+                try {
+                    const parts = token.split('.');
+                    if (parts.length === 3) {
+                        const payload = JSON.parse(atob(parts[1]));
+                        const now = Math.floor(Date.now() / 1000);
+                        
+                        if (payload.exp && payload.exp < now) {
+                            status += '<br><div class="fail">⚠️ Token EXPIRED</div>';
+                        } else {
+                            status += '<br><div class="pass">✅ Token Valid</div>';
+                        }
+                    } else {
+                        status += '<br><div class="fail">❌ Invalid Token Format</div>';
+                    }
+                } catch (error) {
+                    status += `<br><div class="fail">❌ Token Error: ${error.message}</div>`;
+                }
+            }
+            
+            document.getElementById('auth-status').innerHTML = status;
+        }
+
+        function testProtection() {
+            const resultDiv = document.getElementById('test-result');
+            
+            // Test 1: Try to access with no token
+            localStorage.removeItem('wb_token');
+            localStorage.removeItem('wb_user');
+            localStorage.removeItem('wb_wallet');
+            
+            // Try to open app.html in new window
+            const testWindow = window.open('app.html', '_blank', 'width=800,height=600');
+            
+            setTimeout(() => {
+                if (testWindow && !testWindow.closed) {
+                    resultDiv.innerHTML = '<div class="fail">❌ SECURITY ISSUE: app.html opened without authentication</div>';
+                } else {
+                    resultDiv.innerHTML = '<div class="pass">✅ Protection Working: app.html redirected or blocked</div>';
+                }
+                testWindow.close();
+            }, 2000);
+        }
+
+        function clearAuth() {
+            localStorage.removeItem('wb_token');
+            localStorage.removeItem('wb_user');
+            localStorage.removeItem('wb_wallet');
+            sessionStorage.clear();
+            checkAuthStatus();
+            document.getElementById('manual-result').innerHTML = '<div class="warning">⚠️ Authentication cleared</div>';
+        }
+
+        function checkPages() {
+            const resultDiv = document.getElementById('manual-result');
+            let results = '';
+            
+            // Check if pages exist and are accessible
+            const pages = ['app.html', 'arena.html'];
+            
+            pages.forEach(page => {
+                fetch(page, { method: 'HEAD' })
+                    .then(response => {
+                        if (response.ok) {
+                            results += `<div class="pass">✅ ${page}: Accessible (${response.status})</div>`;
+                        } else {
+                            results += `<div class="fail">❌ ${page}: Not accessible (${response.status})</div>`;
+                        }
+                    })
+                    .catch(error => {
+                        results += `<div class="fail">❌ ${page}: Error - ${error.message}</div>`;
+                    });
+            });
+            
+            resultDiv.innerHTML = results;
+        }
+
+        // Check status on load
+        window.addEventListener('load', () => {
+            checkAuthStatus();
+        });
+    </script>
+</body>
+</html>

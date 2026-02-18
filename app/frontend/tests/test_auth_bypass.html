@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WORLDBINDER — Security Tests</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #1a1a1a; color: white; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #333; border-radius: 5px; }
+        .test-case { margin: 10px 0; padding: 10px; background: #2a2a2a; border-radius: 3px; }
+        .result { margin: 5px 0; padding: 5px; border-radius: 3px; }
+        .pass { background: #4CAF50; color: white; }
+        .fail { background: #f44336; color: white; }
+        .warning { background: #ff9800; color: white; }
+        button { padding: 8px 16px; margin: 5px; background: #4CAF50; color: white; border: none; cursor: pointer; border-radius: 3px; }
+        button:hover { background: #45a049; }
+        pre { background: #333; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        .status { font-weight: bold; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>🔒 WORLDBINDER Security Tests</h1>
+    <p>Testing authentication bypass and security vulnerabilities</p>
+
+    <div class="test-section">
+        <h2>🚪 Direct Access Tests</h2>
+        <div class="test-case">
+            <h3>Test 1: Direct Access to app.html</h3>
+            <button onclick="testDirectAccess('app.html')">Test app.html Access</button>
+            <div id="app-result" class="result"></div>
+        </div>
+        
+        <div class="test-case">
+            <h3>Test 2: Direct Access to arena.html</h3>
+            <button onclick="testDirectAccess('arena.html')">Test arena.html Access</button>
+            <div id="arena-result" class="result"></div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🔑 Authentication Tests</h2>
+        <div class="test-case">
+            <h3>Test 3: Token Manipulation</h3>
+            <button onclick="testTokenManipulation()">Test Token Bypass</button>
+            <div id="token-result" class="result"></div>
+        </div>
+        
+        <div class="test-case">
+            <h3>Test 4: LocalStorage Tampering</h3>
+            <button onclick="testLocalStorageTampering()">Test LocalStorage Bypass</button>
+            <div id="storage-result" class="result"></div>
+        </div>
+        
+        <div class="test-case">
+            <h3>Test 5: SessionStorage Tampering</h3>
+            <button onclick="testSessionStorageTampering()">Test SessionStorage Bypass</button>
+            <div id="session-result" class="result"></div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🌐 API Security Tests</h2>
+        <div class="test-case">
+            <h3>Test 6: API Endpoint Access</h3>
+            <button onclick="testAPIAccess()">Test API Without Auth</button>
+            <div id="api-result" class="result"></div>
+        </div>
+        
+        <div class="test-case">
+            <h3>Test 7: CORS Bypass</h3>
+            <button onclick="testCORSBypass()">Test CORS Headers</button>
+            <div id="cors-result" class="result"></div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>📊 Results Summary</h2>
+        <div id="summary" class="status">No tests run yet</div>
+    </div>
+
+    <script>
+        let testResults = {
+            directAccess: {},
+            auth: {},
+            api: {}
+        };
+
+        async function testDirectAccess(page) {
+            const resultDiv = document.getElementById(page.replace('.html', '-result'));
+            
+            try {
+                // Open in new window to test
+                const testWindow = window.open(page, '_blank', 'width=800,height=600');
+                
+                setTimeout(() => {
+                    if (testWindow && !testWindow.closed) {
+                        resultDiv.innerHTML = '<div class="warning">⚠️ Page opened - check if it redirects to login</div>';
+                        testResults.directAccess[page] = 'opened';
+                    } else {
+                        resultDiv.innerHTML = '<div class="pass">✅ Page properly protected/redirected</div>';
+                        testResults.directAccess[page] = 'protected';
+                    }
+                    updateSummary();
+                }, 2000);
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="fail">❌ Error: ${error.message}</div>`;
+                testResults.directAccess[page] = 'error';
+                updateSummary();
+            }
+        }
+
+        async function testTokenManipulation() {
+            const resultDiv = document.getElementById('token-result');
+            
+            try {
+                // Test invalid tokens
+                const invalidTokens = [
+                    '',
+                    'invalid',
+                    'Bearer invalid',
+                    'fake.jwt.token',
+                    'admin_token',
+                    'eyJ0eXMiOiJhZG1pbmUiOiJhZG1pbiJ9.eyJzdWIiOiJhZG1pbiJ9.signature'
+                ];
+                
+                let results = [];
+                
+                for (const token of invalidTokens) {
+                    localStorage.setItem('wb_token', token);
+                    
+                    // Try to access protected page
+                    const response = await fetch('/api/user/profile', {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    
+                    results.push({
+                        token: token.substring(0, 20) + '...',
+                        status: response.status,
+                        blocked: response.status === 401
+                    });
+                }
+                
+                const blockedCount = results.filter(r => r.blocked).length;
+                
+                if (blockedCount === results.length) {
+                    resultDiv.innerHTML = '<div class="pass">✅ All invalid tokens properly rejected</div>';
+                    testResults.auth.tokenManipulation = 'passed';
+                } else {
+                    resultDiv.innerHTML = `<div class="fail">❌ ${results.length - blockedCount} invalid tokens accepted</div>`;
+                    testResults.auth.tokenManipulation = 'failed';
+                }
+                
+                // Clean up
+                localStorage.removeItem('wb_token');
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="fail">❌ Error: ${error.message}</div>`;
+                testResults.auth.tokenManipulation = 'error';
+            }
+            
+            updateSummary();
+        }
+
+        async function testLocalStorageTampering() {
+            const resultDiv = document.getElementById('storage-result');
+            
+            try {
+                // Test localStorage manipulation
+                const originalToken = localStorage.getItem('wb_token');
+                
+                // Set fake admin data
+                localStorage.setItem('wb_token', 'fake_admin_token');
+                localStorage.setItem('wb_user', JSON.stringify({
+                    wallet: 'admin_wallet',
+                    username: 'admin',
+                    isAdmin: true
+                }));
+                
+                // Try to access API
+                const response = await fetch('/api/user/profile', {
+                    headers: {
+                        'Authorization': 'Bearer fake_admin_token'
+                    }
+                });
+                
+                if (response.status === 401) {
+                    resultDiv.innerHTML = '<div class="pass">✅ LocalStorage tampering properly detected</div>';
+                    testResults.auth.localStorage = 'passed';
+                } else {
+                    resultDiv.innerHTML = `<div class="fail">❌ LocalStorage tampering not detected (status: ${response.status})</div>`;
+                    testResults.auth.localStorage = 'failed';
+                }
+                
+                // Restore original state
+                if (originalToken) {
+                    localStorage.setItem('wb_token', originalToken);
+                } else {
+                    localStorage.removeItem('wb_token');
+                }
+                localStorage.removeItem('wb_user');
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="fail">❌ Error: ${error.message}</div>`;
+                testResults.auth.localStorage = 'error';
+            }
+            
+            updateSummary();
+        }
+
+        async function testSessionStorageTampering() {
+            const resultDiv = document.getElementById('session-result');
+            
+            try {
+                // Test sessionStorage manipulation
+                sessionStorage.setItem('wb_logged_in', 'true');
+                sessionStorage.setItem('wb_user', JSON.stringify({
+                    wallet: 'fake_wallet',
+                    username: 'hacker'
+                }));
+                
+                // Try to access game functions
+                const hasGameAccess = typeof window.gameLogic !== 'undefined' || 
+                                   document.getElementById('screen-backpack') !== null;
+                
+                if (hasGameAccess) {
+                    resultDiv.innerHTML = '<div class="warning">⚠️ SessionStorage tampering possible - check game.js auth guard</div>';
+                    testResults.auth.sessionStorage = 'warning';
+                } else {
+                    resultDiv.innerHTML = '<div class="pass">✅ SessionStorage tampering not effective</div>';
+                    testResults.auth.sessionStorage = 'passed';
+                }
+                
+                // Clean up
+                sessionStorage.clear();
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="fail">❌ Error: ${error.message}</div>`;
+                testResults.auth.sessionStorage = 'error';
+            }
+            
+            updateSummary();
+        }
+
+        async function testAPIAccess() {
+            const resultDiv = document.getElementById('api-result');
+            
+            try {
+                const endpoints = [
+                    '/api/user/profile',
+                    '/api/user/nfts',
+                    '/api/skills/upgrade',
+                    '/api/player/me',
+                    '/api/leaderboard'
+                ];
+                
+                let results = [];
+                
+                for (const endpoint of endpoints) {
+                    const response = await fetch(endpoint);
+                    results.push({
+                        endpoint: endpoint,
+                        status: response.status,
+                        protected: response.status === 401
+                    });
+                }
+                
+                const protectedCount = results.filter(r => r.protected).length;
+                const publicEndpoints = results.filter(r => !r.protected);
+                
+                let html = `<div class="pass">✅ ${protectedCount} endpoints properly protected</div><br>`;
+                html += `<div class="warning">⚠️ ${publicEndpoints.length} endpoints publicly accessible:</div>`;
+                
+                publicEndpoints.forEach(r => {
+                    html += `<br>• ${r.endpoint} (status: ${r.status})`;
+                });
+                
+                resultDiv.innerHTML = html;
+                testResults.api.access = protectedCount === endpoints.length ? 'passed' : 'partial';
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="fail">❌ Error: ${error.message}</div>`;
+                testResults.api.access = 'error';
+            }
+            
+            updateSummary();
+        }
+
+        async function testCORSBypass() {
+            const resultDiv = document.getElementById('cors-result');
+            
+            try {
+                const response = await fetch('/api/user/profile', {
+                    method: 'OPTIONS'
+                });
+                
+                const corsHeaders = {
+                    'Access-Control-Allow-Origin': response.headers.get('Access-Control-Allow-Origin'),
+                    'Access-Control-Allow-Methods': response.headers.get('Access-Control-Allow-Methods'),
+                    'Access-Control-Allow-Headers': response.headers.get('Access-Control-Allow-Headers')
+                };
+                
+                let html = '<div class="pass">✅ CORS headers present:</div>';
+                
+                Object.entries(corsHeaders).forEach(([key, value]) => {
+                    html += `<br><strong>${key}:</strong> ${value || 'Not set'}`;
+                });
+                
+                // Check if CORS is properly configured
+                const allowedOrigin = corsHeaders['Access-Control-Allow-Origin'];
+                if (allowedOrigin && allowedOrigin !== '*' && allowedOrigin !== window.location.origin) {
+                    html += '<br><div class="warning">⚠️ CORS restricted to specific origins</div>';
+                } else if (allowedOrigin === '*') {
+                    html += '<br><div class="warning">⚠️ CORS allows any origin (potential security risk)</div>';
+                }
+                
+                resultDiv.innerHTML = html;
+                testResults.api.cors = 'checked';
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="fail">❌ Error: ${error.message}</div>`;
+                testResults.api.cors = 'error';
+            }
+            
+            updateSummary();
+        }
+
+        function updateSummary() {
+            const summaryDiv = document.getElementById('summary');
+            
+            const totalTests = Object.values(testResults.directAccess).length + 
+                              Object.values(testResults.auth).length + 
+                              Object.values(testResults.api).length;
+            
+            const passedTests = Object.values(testResults.directAccess).filter(r => r === 'protected').length +
+                               Object.values(testResults.auth).filter(r => r === 'passed').length +
+                               Object.values(testResults.api).filter(r => r === 'passed').length;
+            
+            const failedTests = Object.values(testResults.directAccess).filter(r => r === 'opened').length +
+                               Object.values(testResults.auth).filter(r => r === 'failed').length +
+                               Object.values(testResults.api).filter(r => r === 'failed').length;
+            
+            const warningTests = Object.values(testResults.auth).filter(r => r === 'warning').length +
+                                Object.values(testResults.api).filter(r => r === 'partial').length;
+            
+            let html = `<div class="status">📊 Security Test Summary:</div>`;
+            html += `<div>Total Tests: ${totalTests}</div>`;
+            html += `<div class="pass">✅ Passed: ${passedTests}</div>`;
+            html += `<div class="fail">❌ Failed: ${failedTests}</div>`;
+            html += `<div class="warning">⚠️ Warnings: ${warningTests}</div>`;
+            
+            if (failedTests === 0 && warningTests === 0) {
+                html += '<div class="pass"><strong>🛡️ All security tests passed!</strong></div>';
+            } else {
+                html += '<div class="fail"><strong>🚨 Security issues detected!</strong></div>';
+            }
+            
+            summaryDiv.innerHTML = html;
+        }
+
+        // Run initial check
+        window.addEventListener('load', () => {
+            updateSummary();
+        });
+    </script>
+</body>
+</html>

@@ -25,48 +25,30 @@ const NFTScanner = {
    */
   async scan(walletAddress) {
     try {
-      const response = await fetch(this.RPC_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 'wb-nft-scan',
-          method: 'getAssetsByOwner',
-          params: {
-            ownerAddress: walletAddress,
-            page: 1,
-            limit: 100,
-            displayOptions: {
-              showCollectionMetadata: true,
-              showFungible: false,
-              showUnverifiedCollections: false
-            }
-          }
-        })
-      });
-
-      const data = await response.json();
-
-      if (!data.result || !data.result.items) {
-        console.warn('NFTScanner: No items returned from DAS API');
+      const token = localStorage.getItem('wb_token');
+      if (!token) {
+        console.warn('NFTScanner: No auth token available');
         return [];
       }
 
-      /* Filter by collection address */
-      const collectionNFTs = data.result.items.filter(item => {
-        const grouping = item.grouping || [];
-        return grouping.some(g =>
-          g.group_key === 'collection' &&
-          g.group_value === this.COLLECTION_ADDRESS
-        );
+      const response = await fetch('/api/wallet/scan', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ walletAddress: walletAddress })
       });
 
-      /* Parse into game-friendly format, limit to MAX_NFTS */
-      const parsed = collectionNFTs.slice(0, this.MAX_NFTS).map(item => {
-        return this._parseNFT(item);
-      });
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        console.warn('NFTScanner: Backend scan failed', response.status, errText);
+        return [];
+      }
 
-      return parsed;
+      const data = await response.json();
+      const nfts = Array.isArray(data.nfts) ? data.nfts : [];
+      return nfts.slice(0, this.MAX_NFTS);
 
     } catch (err) {
       console.error('NFTScanner: Scan failed', err);
@@ -139,3 +121,5 @@ const NFTScanner = {
     return 0;
   }
 };
+
+window.NFTScanner = NFTScanner;

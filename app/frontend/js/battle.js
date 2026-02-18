@@ -8,12 +8,91 @@
 (function () {
   'use strict';
 
-  if (!WalletManager.isLoggedIn()) {
-    window.location.href = 'index.html';
+  /* --- AUTH GUARD --- */
+  function checkAuth() {
+    const token = localStorage.getItem('wb_token');
+    if (!token) {
+      console.error('No auth token found, redirecting to login...');
+      window.location.href = 'index.html';
+      return false;
+    }
+    
+    // Validate token format
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) {
+        throw new Error('Invalid token format');
+      }
+      
+      const payload = JSON.parse(atob(parts[1]));
+      const now = Math.floor(Date.now() / 1000);
+      
+      if (payload.exp && payload.exp < now) {
+        throw new Error('Token expired');
+      }
+      
+      console.log('Token valid, user:', payload.sub);
+      return true;
+    } catch (error) {
+      console.error('Invalid token:', error.message);
+      localStorage.removeItem('wb_token');
+      window.location.href = 'index.html';
+      return false;
+    }
+  }
+
+  // Check auth immediately
+  if (!checkAuth()) {
     return;
   }
 
-  const player = WalletManager.getPlayer();
+  function checkAuth() {
+    const token = localStorage.getItem('wb_token');
+    if (!token) {
+      console.error('No auth token found, redirecting to login...');
+      window.location.href = 'index.html';
+      return false;
+    }
+    
+    // Validate token format
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) {
+        throw new Error('Invalid token format');
+      }
+      
+      const payload = JSON.parse(atob(parts[1]));
+      const now = Math.floor(Date.now() / 1000);
+      
+      if (payload.exp && payload.exp < now) {
+        throw new Error('Token expired');
+      }
+      
+      console.log('Token valid, user:', payload.sub);
+      return true;
+    } catch (error) {
+      console.error('Invalid token:', error.message);
+      localStorage.removeItem('wb_token');
+      localStorage.removeItem('wb_wallet');
+      localStorage.removeItem('wb_user');
+      window.location.href = 'index.html';
+      return false;
+    }
+  }
+
+  // Check auth immediately
+  if (!checkAuth()) {
+    return;
+  }
+
+  const player = JSON.parse(localStorage.getItem('wb_user') || '{}');
+  const wallet = localStorage.getItem('wb_wallet');
+
+  if (!player || !wallet) {
+    console.error('No user data found, redirecting to login...');
+    window.location.href = 'index.html';
+    return;
+  }
   const selectedNFT = JSON.parse(sessionStorage.getItem('wb_selected_nft'));
 
   if (!selectedNFT) {
@@ -94,7 +173,7 @@
     shieldTimer: null,
     healTimer: null,
     running: false,
-    oppAI: null,
+    oppActionTimer: null,
     timerInterval: null,
     tickInterval: null
   };
@@ -135,13 +214,155 @@
   const btnPlayAgain  = $('btn-play-again');
   const btnBackBP     = $('btn-back-backpack');
 
+  const overlayBet = $('overlay-bet');
+  const betAmountInput = $('bet-amount');
+  const betBalanceEl = $('bet-balance');
+  const betErrorEl = $('bet-error');
+  const btnBetConfirm = $('btn-bet-confirm');
+  const btnBetCancel = $('btn-bet-cancel');
+
+  const overlayWait = $('overlay-wait');
+  const waitSecondsEl = $('wait-seconds');
+
   /* ======================
      INIT
      ====================== */
   function init() {
     setupUI();
     renderSkillBar();
-    startBattle();
+    startPreBattleFlow();
+  }
+
+  let betAmount = 0;
+  let waitTimer = null;
+  let battleId = null;
+  let battlePollTimer = null;
+  let serverResolution = null;
+
+  function startPreBattleFlow() {
+    showBetOverlay();
+  }
+
+  function showBetOverlay() {
+    if (!overlayBet) {
+      // Fallback: if overlay missing, start immediately
+      startWaitingPhase();
+      return;
+    }
+
+    betAmount = 0;
+    if (betErrorEl) betErrorEl.classList.add('hidden');
+    if (betAmountInput) betAmountInput.value = '';
+
+    const points = Number(player.points || 0);
+    if (betBalanceEl) betBalanceEl.textContent = `Balance: ${points}`;
+
+    overlayBet.classList.remove('hidden');
+  }
+
+  function hideBetOverlay() {
+    if (overlayBet) overlayBet.classList.add('hidden');
+  }
+
+  function showBetError(msg) {
+    if (!betErrorEl) return;
+    betErrorEl.textContent = msg;
+    betErrorEl.classList.remove('hidden');
+  }
+
+  function startWaitingPhase() {
+    hideBetOverlay();
+
+    // Waiting is server-authoritative now.
+    // We display the server-provided wait time and poll for resolution.
+    startServerBattle();
+  }
+
+  async function startServerBattle() {
+    const token = localStorage.getItem('wb_token');
+    if (!token) {
+      showBetError('Not authenticated');
+      return;
+    }
+
+    const mintAddress = selectedNFT && (selectedNFT.mintAddress || selectedNFT.mint || selectedNFT.id);
+    if (!mintAddress) {
+      showBetError('NFT is missing mint address');
+      return;
+    }
+
+    try {
+      const resp = await fetch('/api/battle/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ mintAddress, bet: betAmount })
+      });
+
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        const msg = (data && data.detail) ? data.detail : 'Failed to start battle';
+        overlayWait && overlayWait.classList.add('hidden');
+        showBetOverlay();
+        showBetError(msg);
+        return;
+      }
+
+      battleId = data.battle_id;
+      serverResolution = null;
+
+      let remaining = Number(data.wait_seconds || 60);
+      if (overlayWait) overlayWait.classList.remove('hidden');
+      if (waitSecondsEl) waitSecondsEl.textContent = String(remaining);
+
+      if (waitTimer) clearInterval(waitTimer);
+      waitTimer = setInterval(() => {
+        remaining -= 1;
+        if (waitSecondsEl) waitSecondsEl.textContent = String(Math.max(0, remaining));
+        if (remaining <= 0) {
+          clearInterval(waitTimer);
+          waitTimer = null;
+          if (overlayWait) overlayWait.classList.add('hidden');
+          startBattle();
+        }
+      }, 1000);
+
+      startPollingBattleStatus();
+    } catch (e) {
+      overlayWait && overlayWait.classList.add('hidden');
+      showBetOverlay();
+      showBetError('Network error');
+    }
+  }
+
+  function startPollingBattleStatus() {
+    if (!battleId) return;
+    const token = localStorage.getItem('wb_token');
+    if (!token) return;
+
+    if (battlePollTimer) clearInterval(battlePollTimer);
+    battlePollTimer = setInterval(async () => {
+      try {
+        const resp = await fetch(`/api/battle/${encodeURIComponent(battleId)}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) return;
+
+        if (data.status === 'resolved' && data.result) {
+          serverResolution = data.result;
+          clearInterval(battlePollTimer);
+          battlePollTimer = null;
+          if (state.running) {
+            endBattle();
+          }
+        }
+      } catch (_e) {
+        // ignore transient errors
+      }
+    }, 1000);
   }
 
   function setupUI() {
@@ -232,8 +453,28 @@
     clearInterval(state.tickInterval);
     if (state.shieldTimer) clearTimeout(state.shieldTimer);
     if (state.healTimer) clearInterval(state.healTimer);
-    if (state.oppAI) clearTimeout(state.oppAI);
-    determineWinner();
+    if (state.oppActionTimer) clearTimeout(state.oppActionTimer);
+    if (battlePollTimer) {
+      clearInterval(battlePollTimer);
+      battlePollTimer = null;
+    }
+
+    // Result is server-authoritative if it arrived.
+    if (serverResolution && typeof serverResolution.player_wins === 'boolean') {
+      determineWinnerFromServer(serverResolution);
+    } else {
+      determineWinner();
+    }
+  }
+
+  function determineWinnerFromServer(res) {
+    // Sync local cached player for UI only
+    if (typeof res.points === 'number') player.points = res.points;
+    if (typeof res.wins === 'number') player.wins = res.wins;
+    if (typeof res.losses === 'number') player.losses = res.losses;
+    WalletManager.savePlayer(player);
+
+    showResult(!!res.player_wins);
   }
 
   /* ======================
@@ -368,12 +609,12 @@
   }
 
   /* ======================
-     OPPONENT AI
+     OPPONENT ACTIONS
      ====================== */
   function scheduleOppAction() {
     if (!state.running) return;
     const delay = 1500 + Math.random() * 2500;
-    state.oppAI = setTimeout(() => {
+    state.oppActionTimer = setTimeout(() => {
       if (!state.running) return;
       oppAttack();
       scheduleOppAction();
@@ -384,6 +625,11 @@
     const attackSkills = SKILLS.filter(s => s.type === 'damage');
     const skill = attackSkills[Math.floor(Math.random() * attackSkills.length)];
     let dmg = skill.damage;
+
+    // Opponent advantage: tuned so the opponent wins more often on average.
+    // Keep it subtle to preserve gameplay feel.
+    const opponentDmgMultiplier = 1.12;
+    dmg = Math.floor(dmg * opponentDmgMultiplier);
 
     switch (skill.vfx) {
       case 'blade':  vfxBladeStrike(playerCapsule); break;
@@ -523,14 +769,6 @@
   }
 
   function showResult(won) {
-    if (won) {
-      player.wins++;
-      player.points += 100;
-    } else {
-      player.losses++;
-    }
-    WalletManager.savePlayer(player);
-
     overlayResult.classList.remove('hidden');
 
     if (won) {
@@ -549,6 +787,30 @@
      ====================== */
   btnPlayAgain.addEventListener('click', () => window.location.href = 'arena.html');
   btnBackBP.addEventListener('click', () => window.location.href = 'app.html');
+
+  if (btnBetConfirm) {
+    btnBetConfirm.addEventListener('click', () => {
+      const points = Number(player.points || 0);
+      const raw = betAmountInput ? betAmountInput.value : '';
+      const amt = Math.floor(Number(raw));
+
+      if (!Number.isFinite(amt) || amt <= 0) {
+        showBetError('Enter a valid bet amount');
+        return;
+      }
+      if (amt > points) {
+        showBetError('Not enough points for this bet');
+        return;
+      }
+
+      betAmount = amt;
+      startWaitingPhase();
+    });
+  }
+
+  if (btnBetCancel) {
+    btnBetCancel.addEventListener('click', () => window.location.href = 'app.html');
+  }
 
   /* --- Start --- */
   init();

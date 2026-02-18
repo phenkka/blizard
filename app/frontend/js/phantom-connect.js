@@ -6,11 +6,9 @@
 console.log('PhantomConnect.js loaded successfully');
 
 // Use external base58 library
-const base58 = window.base58;
+const base58 = window.base58 || window.bs58;
 
-if (!base58) {
-  console.error('Base58 library not loaded! Please check script loading order.');
-}
+// base58 is optional for current flow (signMessage + base64 signature)
 
 class PhantomConnectManager {
   constructor() {
@@ -23,7 +21,7 @@ class PhantomConnectManager {
   }
 
   async init() {
-    console.log('Using direct Phantom wallet connection');
+    Debug.log('Using direct Phantom wallet connection');
     
     // Check for existing session
     const storedToken = localStorage.getItem('wb_token');
@@ -53,11 +51,11 @@ class PhantomConnectManager {
             }
           }
         } catch (error) {
-          console.log('Auto-connect failed, manual connection required');
+          Debug.log('Auto-connect failed, manual connection required');
         }
       }
     } catch (error) {
-      console.log('Auto-connect failed, manual connection required');
+      Debug.log('Auto-connect failed, manual connection required');
     }
   }
 
@@ -65,7 +63,7 @@ class PhantomConnectManager {
     try {
       return await this.connectDirect();
     } catch (error) {
-      console.error('Phantom connection error:', error);
+      Debug.error('Phantom connection error:', error);
       this.disconnect();
       throw error;
     }
@@ -88,19 +86,19 @@ class PhantomConnectManager {
     // Get challenge from backend
     const challenge = await this.getChallenge(publicKey);
     
-    console.log('Challenge received:', challenge);
+    Debug.log('Challenge received:', challenge);
     
     // Sign the challenge message
     const encodedMessage = new TextEncoder().encode(challenge.message);
     const signatureResp = await window.solana.signMessage(encodedMessage, 'utf8');
     
-    console.log('Signature response:', signatureResp);
-    console.log('Signature type:', typeof signatureResp.signature);
-    console.log('Signature length:', signatureResp.signature.length);
+    Debug.log('Signature response:', signatureResp);
+    Debug.log('Signature type:', typeof signatureResp.signature);
+    Debug.log('Signature length:', signatureResp.signature.length);
     
     // Convert signature Uint8Array to base64 string for backend (временно)
     const signatureBase64 = btoa(String.fromCharCode(...signatureResp.signature));
-    console.log('Signature base64:', signatureBase64);
+    Debug.log('Signature base64:', signatureBase64);
     
     // Verify signature with backend and get token
     const authResult = await this.verifySignature(
@@ -141,14 +139,14 @@ class PhantomConnectManager {
 
       return await response.json();
     } catch (error) {
-      console.error('Challenge request error:', error);
+      Debug.error('Challenge request error:', error);
       throw error;
     }
   }
 
   async verifySignature(publicKey, signature, message) {
     try {
-      console.log('Verifying signature:', { publicKey, signature, message });
+      Debug.log('Verifying signature:', { publicKey, signature, message });
       
       const response = await fetch(`${this.API_BASE_URL}/auth/verify`, {
         method: 'POST',
@@ -162,19 +160,19 @@ class PhantomConnectManager {
         })
       });
 
-      console.log('Verification response status:', response.status);
+      Debug.log('Verification response status:', response.status);
       
       if (!response.ok) {
         const errorData = await response.json();
-        console.error('Verification failed:', errorData);
+        Debug.error('Verification failed:', errorData);
         throw new Error(errorData.detail || 'Signature verification failed');
       }
 
       const result = await response.json();
-      console.log('Verification success:', result);
+      Debug.log('Verification success:', result);
       return result;
     } catch (error) {
-      console.error('Signature verification error:', error);
+      Debug.error('Signature verification error:', error);
       throw error;
     }
   }
@@ -195,14 +193,6 @@ class PhantomConnectManager {
           publicKey: userData.wallet_address,
           ...userData
         };
-        // Update localStorage with fresh user data from API
-        localStorage.setItem('wb_user', JSON.stringify({
-          id: userData.id,
-          walletAddress: userData.wallet_address,
-          username: userData.username,
-          avatarUrl: userData.avatar_url,
-          nfts: userData.nfts
-        }));
         return true;
       } else {
         // Token invalid, clear session
@@ -210,7 +200,7 @@ class PhantomConnectManager {
         return false;
       }
     } catch (error) {
-      console.error('Session validation error:', error);
+      Debug.error('Session validation error:', error);
       this.clearSession();
       return false;
     }
@@ -219,7 +209,7 @@ class PhantomConnectManager {
   disconnect() {
     if (window.solana && window.solana.isPhantom) {
       // Disconnect from Phantom
-      window.solana.disconnect().catch(console.error);
+      window.solana.disconnect().catch(Debug.error);
     }
     
     this.isConnected = false;
@@ -280,16 +270,6 @@ class PhantomConnectManager {
         // Token expired, clear session
         this.clearSession();
       }
-      
-      // Обработка ошибок валидации
-      if (response.status === 422 && errorData.errors) {
-        const errors = errorData.errors.map(err => {
-          const field = err.loc ? err.loc[err.loc.length - 1] : 'field';
-          return `${field}: ${err.msg}`;
-        }).join(', ');
-        throw new Error(`Validation error: ${errors}`);
-      }
-      
       throw new Error(errorData.detail || `HTTP ${response.status}`);
     }
 
@@ -301,24 +281,10 @@ class PhantomConnectManager {
   }
 
   async updateProfile(profileData) {
-    const result = await this.apiRequest('/user/profile', {
+    return await this.apiRequest('/user/profile', {
       method: 'PATCH',
       body: JSON.stringify(profileData)
     });
-    
-    // Update localStorage with new profile data
-    if (result) {
-      const currentUser = this.getUser() || {};
-      const updatedUser = {
-        ...currentUser,
-        username: result.username,
-        avatarUrl: result.avatar_url,
-        nfts: result.nfts || []
-      };
-      localStorage.setItem('wb_user', JSON.stringify(updatedUser));
-    }
-    
-    return result;
   }
 
   async addNFT(nftData) {
@@ -339,11 +305,68 @@ class PhantomConnectManager {
         return 0;
       }
 
-      console.log('Getting token balance for:', window.solana.publicKey.toString());
-      console.log('Token mint:', tokenMint);
+      // Use Helius RPC for better reliability
+      const HELIUS_RPC = 'https://mainnet.helius-rpc.com/?api-key=2b51d0c8-c911-4ffe-a74a-15c2633620b3';
+      
+      // Try different ways to access Web3
+      let Web3 = null;
+      
+      console.log('Solana object structure:', Object.keys(solana));
+      
+      if (typeof solana !== 'undefined' && solana.Web3) {
+        Web3 = solana.Web3;
+        console.log('Found solana.Web3');
+      } else if (typeof window.solana !== 'undefined' && window.solana.web3) {
+        Web3 = window.solana.web3;
+        console.log('Found window.solana.web3');
+      } else if (typeof window.Web3 !== 'undefined') {
+        Web3 = window.Web3;
+        console.log('Found window.Web3');
+      } else if (typeof solana !== 'undefined' && typeof solana.Connection === 'function') {
+        // Try to use solana directly
+        Web3 = solana;
+        console.log('Using solana object directly');
+      }
 
-      // Use direct API call for reliability
-      return await this.getTokenBalanceDirect(tokenMint);
+      if (!Web3) {
+        console.error('Solana Web3 not available. Using direct Helius API call...');
+        return await this.getTokenBalanceDirect(tokenMint);
+      }
+
+      console.log('Using Web3 from:', Web3 === solana.Web3 ? 'solana.Web3' : 'other source');
+
+      const connection = new Web3.Connection(HELIUS_RPC, 'confirmed');
+
+      const publicKey = new Web3.PublicKey(window.solana.publicKey.toString());
+      const tokenMintPubkey = new Web3.PublicKey(tokenMint);
+
+      console.log('Checking token balance for:', publicKey.toString());
+      console.log('Token mint:', tokenMint);
+      console.log('Using Helius RPC');
+
+      // Get token accounts
+      const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
+        publicKey,
+        { mint: tokenMintPubkey },
+        { commitment: 'confirmed' }
+      );
+
+      console.log('Token accounts found:', tokenAccounts.value.length);
+
+      if (tokenAccounts.value.length === 0) {
+        return 0;
+      }
+
+      // Calculate total balance (handles multiple token accounts)
+      let totalBalance = 0;
+      for (const account of tokenAccounts.value) {
+        const balance = account.account.data.parsed.info.tokenAmount.uiAmount || 0;
+        totalBalance += balance;
+        console.log('Account balance:', balance);
+      }
+
+      console.log('Total balance:', totalBalance);
+      return totalBalance;
     } catch (error) {
       console.error('Failed to get token balance:', error);
       return 0;
@@ -358,18 +381,12 @@ class PhantomConnectManager {
         jsonrpc: "2.0",
         id: 1,
         method: "getTokenAccountsByOwner",
-        params: [
-          window.solana.publicKey.toString(),
-          {
-            mint: tokenMint
-          },
-          {
-            encoding: "jsonParsed"
-          }
-        ]
+        params: {
+          owner: window.solana.publicKey.toString(),
+          mint: tokenMint,
+          encoding: "jsonParsed"
+        }
       };
-
-      console.log('Fetching token balance via direct API for:', window.solana.publicKey.toString());
 
       const response = await fetch(HELIUS_RPC, {
         method: 'POST',
@@ -379,11 +396,6 @@ class PhantomConnectManager {
         body: JSON.stringify(requestBody)
       });
 
-      if (!response.ok) {
-        console.error('Helius API HTTP error:', response.status, response.statusText);
-        return 0;
-      }
-
       const data = await response.json();
       
       if (data.error) {
@@ -391,8 +403,8 @@ class PhantomConnectManager {
         return 0;
       }
 
-      if (!data.result || !data.result.value || data.result.value.length === 0) {
-        console.log('No token accounts found for this token');
+      if (!data.result || data.result.value.length === 0) {
+        console.log('No token accounts found');
         return 0;
       }
 
@@ -412,17 +424,7 @@ class PhantomConnectManager {
   }
 
   async getLeaderboard() {
-    try {
-      // Public endpoint - no auth required
-      const response = await fetch(`${this.API_BASE_URL}/leaderboard`);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      return await response.json();
-    } catch (error) {
-      console.error('Leaderboard fetch error:', error);
-      return { leaderboard: [] };
-    }
+    return await this.apiRequest('/leaderboard');
   }
 }
 

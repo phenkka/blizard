@@ -76,28 +76,25 @@ if (typeof solana === 'undefined') {
       btnConnect.disabled = true;
 
       try {
-        console.log('Starting wallet connection...');
-        console.log('PhantomConnect available:', !!window.PhantomConnect);
-        console.log('Phantom installed:', window.PhantomConnect ? window.PhantomConnect.isPhantomInstalled() : 'N/A');
-        console.log('Using fallback:', window.PhantomConnect ? window.PhantomConnect.useFallback : 'N/A');
+        Debug.log('Starting wallet connection...');
+        Debug.log('PhantomConnect available:', !!window.PhantomConnect);
+        Debug.log('Phantom installed:', window.PhantomConnect ? window.PhantomConnect.isPhantomInstalled() : 'N/A');
+        Debug.log('Using fallback:', window.PhantomConnect ? window.PhantomConnect.useFallback : 'N/A');
         
         const authResult = await window.PhantomConnect.connect();
         const walletAddr = authResult.publicKey;
 
-        console.log('Wallet connected successfully:', walletAddr);
+        Debug.log('Wallet connected successfully:', walletAddr);
 
-        /* Check if user already has completed registration (has username) */
+        /* Check if user already has profile with NFTs */
         try {
           const profile = await window.PhantomConnect.getUserProfile();
-          console.log('Profile data:', profile);
-          if (profile.username) {
-            // User already registered, redirect to game
-            console.log('User already registered, redirecting to app');
+          if (profile.nfts && profile.nfts.length > 0) {
             window.location.href = 'app.html';
             return;
           }
         } catch (error) {
-          console.log('Profile not found or incomplete, proceeding with registration');
+          Debug.log('Profile not found, proceeding with registration');
         }
 
         /* ====== ACCESS GATE CHECK ====== */
@@ -105,7 +102,7 @@ if (typeof solana === 'undefined') {
 
         // Check NFTs
         scannedNFTs = await NFTScanner.scan(walletAddr);
-        console.log('NFT scan result:', scannedNFTs.length, 'NFTs found');
+        Debug.log('NFT scan result:', scannedNFTs.length, 'NFTs found');
 
         // Check token balance
         console.log('Getting token balance...');
@@ -146,41 +143,19 @@ if (typeof solana === 'undefined') {
           const modalContent = modalNoNFT.querySelector('.modal-box');
           modalContent.innerHTML = `
             <div class="no-nft-icon">🔒</div>
-            <h2 style="margin-bottom: 12px;">Access Required</h2>
-            <p style="color: var(--sand); margin-bottom: 8px;">To enter WORLDBINDER, you need either:</p>
-            
-            <div class="access-requirements">
-              <div class="requirement-option">
-                <div class="option-header">
-                  <span class="option-icon">🎴</span>
-                  <span class="option-title">Option 1: NFT Holder</span>
-                </div>
-                <div class="option-description">
-                  At least 1 WORLDBINDER NFT in your wallet
-                </div>
-                <div class="option-detail">
-                  NFTs give you warrior characters with unique abilities
-                </div>
+            <h2>Access Required</h2>
+            <p>To enter WORLDBINDER, you need either:</p>
+            <div style="text-align: left; margin: 20px 0;">
+              <div style="margin-bottom: 15px;">
+                <strong>🎴 Option 1:</strong> At least 1 WORLDBINDER NFT in your wallet<br>
+                <small>NFTs give you warrior characters with unique abilities</small>
               </div>
-              
-              <div class="requirement-option">
-                <div class="option-header">
-                  <span class="option-icon">🪙</span>
-                  <span class="option-title">Option 2: Token Holder</span>
-                </div>
-                <div class="option-description">
-                  At least 20,000 WORLDBINDER tokens
-                </div>
-                <div class="option-detail">
-                  Token address:<br>
-                  <span class="token-address">8AFshqbDiPtFYe8KUNXa4F88DFh8yD8J5MXyeREopump</span>
-                </div>
-                <div class=\"current-balance ${tokenBalance >= 20000 ? 'success' : ''}\">
-                  Current balance: ${tokenBalance.toLocaleString()} tokens ${tokenBalance >= 20000 ? '✓' : '✗'}
-                </div>
+              <div>
+                <strong>🪙 Option 2:</strong> At least 20,000 WORLDBINDER tokens<br>
+                <small>Token address: <code style="background: #f0f0f0; padding: 2px 4px; border-radius: 3px; font-size: 11px;">8AFshqbDiPtFYe8KUNXa4F88DFh8yD8J5MXyeREopump</code></small><br>
+                <small>Current balance: <strong>${tokenBalance.toLocaleString()}</strong> tokens</small>
               </div>
             </div>
-            
             <a href="https://magiceden.io/" target="_blank" class="btn-gold" style="display:inline-block;text-decoration:none;margin-bottom:12px">
               BUY ON MAGIC EDEN
             </a>
@@ -216,7 +191,7 @@ if (typeof solana === 'undefined') {
         modalReg.classList.remove('hidden');
 
       } catch (err) {
-        console.error('Connection error:', err);
+        Debug.error('Connection error:', err);
         
         // Provide better error messages
         if (err.message.includes('not installed')) {
@@ -246,21 +221,6 @@ if (typeof solana === 'undefined') {
       const file = e.target.files[0];
       if (!file) return;
 
-      // Проверка типа файла
-      if (!file.type.startsWith('image/')) {
-        alert('Please select an image file');
-        photoInput.value = '';
-        return;
-      }
-
-      // Проверка размера (2MB = 2097152 bytes)
-      const maxSize = 2 * 1024 * 1024; // 2MB
-      if (file.size > maxSize) {
-        alert(`Image size exceeds 2MB limit. Your image: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
-        photoInput.value = '';
-        return;
-      }
-
       const reader = new FileReader();
       reader.onload = (ev) => {
         avatarDataURL = ev.target.result;
@@ -269,74 +229,25 @@ if (typeof solana === 'undefined') {
         photoHolder.classList.add('hidden');
         validateForm();
       };
-      reader.onerror = () => {
-        alert('Failed to read image file');
-        photoInput.value = '';
-      };
       reader.readAsDataURL(file);
     });
 
     /* --- Username Input --- */
-    inputName.addEventListener('input', (e) => {
-      // Удалить недопустимые символы в реальном времени
-      let value = e.target.value;
-      // Разрешены только буквы, цифры, подчеркивание и дефис
-      value = value.replace(/[^a-zA-Z0-9_-]/g, '');
-      // Максимум 20 символов
-      if (value.length > 20) {
-        value = value.slice(0, 20);
-      }
-      if (e.target.value !== value) {
-        e.target.value = value;
-      }
-      validateForm();
-    });
+    inputName.addEventListener('input', validateForm);
 
     function validateForm() {
-      const username = inputName.value.trim();
-      // Минимум 2 символа, должно начинаться с буквы
-      const nameOk = username.length >= 2 && /^[a-zA-Z]/.test(username);
+      const nameOk = inputName.value.trim().length >= 2;
       btnRegister.disabled = !(nameOk && avatarDataURL);
-      
-      // Показать подсказку если имя невалидно
-      if (username.length > 0 && !nameOk) {
-        if (!/^[a-zA-Z]/.test(username)) {
-          inputName.style.borderColor = 'var(--red)';
-          inputName.title = 'Username must start with a letter';
-        }
-      } else {
-        inputName.style.borderColor = '';
-        inputName.title = '';
-      }
     }
 
     /* --- Register --- */
     btnRegister.addEventListener('click', async () => {
       try {
-        btnRegister.disabled = true;
-        btnRegister.textContent = 'REGISTERING...';
-
-        // Финальная валидация перед отправкой
-        const username = inputName.value.trim();
-        if (username.length < 2 || username.length > 20) {
-          throw new Error('Username must be 2-20 characters');
-        }
-        if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(username)) {
-          throw new Error('Username must start with a letter and contain only letters, numbers, _ and -');
-        }
-        if (!avatarDataURL) {
-          throw new Error('Please upload an avatar');
-        }
-
         // Update user profile with username and avatar
-        const result = await window.PhantomConnect.updateProfile({
-          username: username,
+        await window.PhantomConnect.updateProfile({
+          username: inputName.value.trim(),
           avatarUrl: avatarDataURL
         });
-
-        if (!result || result.error) {
-          throw new Error(result?.error || 'Failed to update profile');
-        }
 
         // Add scanned NFTs to user collection
         for (const nft of scannedNFTs) {
@@ -351,36 +262,7 @@ if (typeof solana === 'undefined') {
         window.location.href = 'app.html';
       } catch (error) {
         console.error('Registration error:', error);
-        
-        // Показать понятное сообщение об ошибке
-        let errorMessage = 'Registration failed. Please try again.';
-        
-        if (error.message) {
-          if (error.message.includes('Validation error')) {
-            // Ошибка валидации от сервера
-            if (error.message.includes('username')) {
-              errorMessage = 'Invalid username. Use only letters, numbers, _ and - (2-20 characters, must start with a letter)';
-            } else if (error.message.includes('avatarUrl') || error.message.includes('avatar')) {
-              errorMessage = 'Avatar size exceeds 2MB limit or invalid format.';
-            } else {
-              errorMessage = error.message.replace('Validation error: ', '');
-            }
-          } else if (error.message.includes('Username already taken')) {
-            errorMessage = 'This username is already taken. Please choose another one.';
-          } else if (error.message.includes('Username')) {
-            errorMessage = error.message;
-          } else if (error.message.includes('Avatar') || error.message.includes('2MB')) {
-            errorMessage = 'Avatar size exceeds 2MB limit. Please use a smaller image.';
-          } else if (error.message.includes('401') || error.message.includes('Unauthorized')) {
-            errorMessage = 'Authentication failed. Please reconnect your wallet.';
-          } else if (!error.message.includes('HTTP')) {
-            errorMessage = error.message;
-          }
-        }
-        
-        alert(errorMessage);
-        btnRegister.disabled = false;
-        btnRegister.textContent = 'ENTER THE WORLD';
+        alert('Registration failed. Please try again.');
       }
     });
   }

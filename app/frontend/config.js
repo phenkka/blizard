@@ -9,6 +9,14 @@ const DEFAULT_CONFIG = {
   API_BASE_URL: '/api'
 };
 
+// Ensure Debug exists before any other scripts use it
+window.Debug = window.Debug || {
+  log: function () {},
+  error: function () {},
+  warn: function () {},
+  info: function () {},
+};
+
 // Initialize configuration
 window.WORLDBINDER_CONFIG = { ...DEFAULT_CONFIG };
 
@@ -19,6 +27,14 @@ async function loadConfig() {
     if (response.ok) {
       const config = await response.json();
       window.WORLDBINDER_CONFIG = { ...DEFAULT_CONFIG, ...config };
+
+      if (window.TokenBurner && window.WORLDBINDER_CONFIG.TOKEN_MINT) {
+        window.TokenBurner.TOKEN_MINT = window.WORLDBINDER_CONFIG.TOKEN_MINT;
+      }
+
+      if (window.WORLDBINDER_CONFIG.SOLANA_RPC && window.NFTScanner) {
+        window.NFTScanner.RPC_URL = window.WORLDBINDER_CONFIG.SOLANA_RPC;
+      }
     }
   } catch (error) {
     console.warn('Failed to load config from server, using defaults');

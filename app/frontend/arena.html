@@ -88,6 +88,32 @@
     </div>
   </div>
 
+  <!-- ====== BET OVERLAY ====== -->
+  <div class="matchmaking-overlay hidden" id="overlay-bet">
+    <div class="mm-phase">
+      <div class="matchmaking-text">Place your bet</div>
+      <div class="bet-box">
+        <label class="bet-label" for="bet-amount">Bet amount (points)</label>
+        <input class="bet-input" id="bet-amount" type="number" min="1" step="1" placeholder="100">
+        <div class="bet-balance" id="bet-balance">Balance: 0</div>
+        <div class="bet-error hidden" id="bet-error"></div>
+        <div class="matchmaking-buttons" style="margin-top:16px">
+          <button class="btn-yes" id="btn-bet-confirm">CONFIRM</button>
+          <button class="btn-no" id="btn-bet-cancel">CANCEL</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== WAITING OVERLAY ====== -->
+  <div class="matchmaking-overlay hidden" id="overlay-wait">
+    <div id="wait-phase" class="mm-phase">
+      <div class="matchmaking-text" id="wait-text">Preparing arena...</div>
+      <div class="matchmaking-spinner"></div>
+      <div class="wait-sub" id="wait-sub">Estimated time: <span id="wait-seconds">60</span>s</div>
+    </div>
+  </div>
+
   <!-- ====== RESULT OVERLAY ====== -->
   <div class="result-overlay hidden" id="overlay-result">
     <div class="result-title" id="result-title">FLAWLESS VICTORY</div>

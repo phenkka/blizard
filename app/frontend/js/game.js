@@ -7,6 +7,44 @@
 (function () {
   'use strict';
 
+  /* --- AUTH GUARD --- */
+  function checkAuth() {
+    const token = localStorage.getItem('wb_token');
+    if (!token) {
+      console.error('No auth token found, redirecting to login...');
+      window.location.href = 'index.html';
+      return false;
+    }
+    
+    // Validate token format
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) {
+        throw new Error('Invalid token format');
+      }
+      
+      const payload = JSON.parse(atob(parts[1]));
+      const now = Math.floor(Date.now() / 1000);
+      
+      if (payload.exp && payload.exp < now) {
+        throw new Error('Token expired');
+      }
+      
+      console.log('Token valid, user:', payload.sub);
+      return true;
+    } catch (error) {
+      console.error('Invalid token:', error.message);
+      localStorage.removeItem('wb_token');
+      window.location.href = 'index.html';
+      return false;
+    }
+  }
+
+  // Check auth immediately
+  if (!checkAuth()) {
+    return;
+  }
+
   /* --- Wait for Phantom Connect to initialize --- */
   function waitForPhantomConnect() {
     if (window.PhantomConnect) {
@@ -16,37 +54,93 @@
     }
   }
 
+  function checkAuth() {
+    const token = localStorage.getItem('wb_token');
+    if (!token) {
+      console.error('No auth token found, redirecting to login...');
+      window.location.href = 'index.html';
+      return false;
+    }
+    
+    // Validate token format
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) {
+        throw new Error('Invalid token format');
+      }
+      
+      const payload = JSON.parse(atob(parts[1]));
+      const now = Math.floor(Date.now() / 1000);
+      
+      if (payload.exp && payload.exp < now) {
+        throw new Error('Token expired');
+      }
+      
+      console.log('Token valid, user:', payload.sub);
+      return true;
+    } catch (error) {
+      console.error('Invalid token:', error.message);
+      localStorage.removeItem('wb_token');
+      localStorage.removeItem('wb_wallet');
+      localStorage.removeItem('wb_user');
+      window.location.href = 'index.html';
+      return false;
+    }
+  }
+
+  // Check auth immediately
+  if (!checkAuth()) {
+    return;
+  }
+
   function initializeGame() {
-    /* --- Auth Guard --- */
-    if (!window.PhantomConnect.isLoggedIn()) {
+    /* --- Load User Data --- */
+    const user = JSON.parse(localStorage.getItem('wb_user') || '{}');
+    const wallet = localStorage.getItem('wb_wallet');
+    
+    if (!user || !wallet) {
+      console.error('No user data found, redirecting to login...');
       window.location.href = 'index.html';
       return;
     }
-
-    const user = window.PhantomConnect.getUser();
-
-    /* ======================
-       PLAYER OBJECT
-       Initialize player from user data + default values
-       ====================== */
-    // Load saved skills from localStorage
-    const savedSkills = localStorage.getItem('wb_player_skills');
-    const defaultSkills = {
-      bladeStrike: { level: 1, maxLevel: 5 },
-      energyBurst: { level: 0, maxLevel: 5 },
-      meteorRain: { level: 0, maxLevel: 3 },
-      defense: { level: 0, maxLevel: 5 },
-      healing: { level: 0, maxLevel: 5 }
-    };
+    
+    console.log('User loaded:', user);
+    console.log('Wallet loaded:', wallet);
 
     const player = {
-      username: user?.username || 'Warrior',
-      points: user?.points || 0,
-      wins: user?.wins || 0,
-      losses: user?.losses || 0,
-      nfts: user?.nfts || [],
-      skills: savedSkills ? JSON.parse(savedSkills) : defaultSkills
+      username: user.username || 'Warrior',
+      points: user.points || 0,
+      wins: user.wins || 0,
+      losses: user.losses || 0,
+      skills: user.skills || {
+        bladeStrike: { level: 1, maxLevel: 5 },
+        energyBurst: { level: 0, maxLevel: 5 },
+        meteorRain: { level: 0, maxLevel: 3 },
+        defense: { level: 0, maxLevel: 5 },
+        healing: { level: 0, maxLevel: 5 }
+      },
+      nfts: Array.isArray(user.nfts) ? user.nfts : []
     };
+
+    const WalletManager = window.PhantomConnect;
+
+    function authHeaders() {
+      const token = localStorage.getItem('wb_token');
+      return token ? { 'Authorization': `Bearer ${token}` } : {};
+    }
+
+    async function refreshNFTs() {
+      try {
+        if (!window.NFTScanner || !wallet) return;
+        const nfts = await window.NFTScanner.scan(wallet);
+        player.nfts = Array.isArray(nfts) ? nfts : [];
+        const stored = JSON.parse(localStorage.getItem('wb_user') || '{}');
+        stored.nfts = player.nfts;
+        localStorage.setItem('wb_user', JSON.stringify(stored));
+      } catch (e) {
+        console.warn('Failed to refresh NFTs:', e);
+      }
+    }
 
     /* ======================
        SKILL DEFINITIONS
@@ -96,7 +190,7 @@
   };
 
   /* Upgrade cost per level in tokens */
-  const UPGRADE_TOKEN_COST = 10000;
+  const UPGRADE_TOKEN_COST = 50000;
 
   /** Calculate effective damage at current level */
   function getSkillDamage(key) {
@@ -154,7 +248,6 @@
   const kothTimer      = $('koth-timer');
   const onlineCount    = $('online-count');
   const nftBonusTable  = $('nft-bonus-table');
-  const mainTokenBalanceEl = $('main-token-balance');
 
   const btnUpgradeSkills = $('btn-upgrade-skills');
   const btnLogout        = $('btn-logout');
@@ -179,43 +272,20 @@
   /* ======================
      INIT
      ====================== */
-  async function init() {
-    console.log('=== GAME INIT START ===');
-    console.log('Player object:', player);
-    console.log('leaderboardEl exists:', !!leaderboardEl);
-    
+  function init() {
     renderPlayerInfo();
-    await renderLeaderboard();
+    renderLeaderboard();
     renderNFTs();
     renderBonusTable();
     renderKOTH();
     startKOTHTimer();
     startOnlineCounter();
-    await loadTokenBalance();
-    
-    console.log('=== GAME INIT COMPLETE ===');
   }
 
-  /* --- Load Token Balance --- */
-  async function loadTokenBalance() {
-    if (!mainTokenBalanceEl) return;
-    
-    try {
-      const wallet = window.PhantomConnect.getStoredWallet();
-      if (!wallet || !window.TokenBurner) {
-        mainTokenBalanceEl.textContent = 'N/A';
-        return;
-      }
-      
-      console.log('Loading token balance for main display...');
-      const balance = await window.TokenBurner.getBalance(wallet);
-      console.log('Main token balance loaded:', balance);
-      mainTokenBalanceEl.textContent = balance.toLocaleString() + ' 🪙';
-    } catch (error) {
-      console.error('Failed to load token balance:', error);
-      mainTokenBalanceEl.textContent = 'Error';
-    }
-  }
+  (async () => {
+    await refreshNFTs();
+    init();
+  })();
 
   /* --- Player Info --- */
   function renderPlayerInfo() {
@@ -231,44 +301,14 @@
   }
 
   /* --- Leaderboard --- */
-  async function renderLeaderboard() {
-    console.log('renderLeaderboard: Starting...');
-    console.log('leaderboardEl:', leaderboardEl);
-    
-    try {
-      console.log('Fetching leaderboard from API...');
-      const response = await window.PhantomConnect.getLeaderboard();
-      console.log('Leaderboard API response:', response);
-      
-      const leaderboard = response.leaderboard || [];
-      console.log('Leaderboard data:', leaderboard.length, 'records');
-      
-      if (leaderboard.length === 0) {
-        console.log('No leaderboard records, showing empty message');
-        leaderboardEl.innerHTML = '<p style="color:var(--sand-dark);text-align:center;padding:12px;">No records yet</p>';
-        return;
-      }
-      
-      leaderboardEl.innerHTML = leaderboard.slice(0, 5).map((p, i) => `
-        <div class="leaderboard-item">
-          <span class="leaderboard-rank">#${i + 1}</span>
-          <span class="leaderboard-name">${p.username || 'Warrior'}</span>
-          <span class="leaderboard-pts">${p.points || 0}</span>
-        </div>
-      `).join('');
-      console.log('Leaderboard rendered successfully');
-    } catch (error) {
-      console.error('Failed to load leaderboard:', error);
-      // Fallback to static data if API fails
-      console.log('Using fallback static leaderboard data');
-      leaderboardEl.innerHTML = LEADERBOARD.map((p, i) => `
-        <div class="leaderboard-item">
-          <span class="leaderboard-rank">#${i + 1}</span>
-          <span class="leaderboard-name">${p.name}</span>
-          <span class="leaderboard-pts">${p.pts}</span>
-        </div>
-      `).join('');
-    }
+  function renderLeaderboard() {
+    leaderboardEl.innerHTML = LEADERBOARD.map((p, i) => `
+      <div class="leaderboard-item">
+        <span class="leaderboard-rank">#${i + 1}</span>
+        <span class="leaderboard-name">${p.name}</span>
+        <span class="leaderboard-pts">${p.pts}</span>
+      </div>
+    `).join('');
   }
 
   /* --- NFT Grid (real from wallet scan) --- */
@@ -320,24 +360,46 @@
       detailImg.style.display = 'none';
     }
 
-    detailTraits.innerHTML = `
-      <div class="trait-row">
-        <span class="trait-name">Level</span>
-        <span class="trait-value">${nft.level}</span>
-      </div>
-      <div class="trait-row">
-        <span class="trait-name">Strength</span>
-        <span class="trait-value">${nft.traits.strength}</span>
-      </div>
-      <div class="trait-row">
-        <span class="trait-name">Agility</span>
-        <span class="trait-value">${nft.traits.agility}</span>
-      </div>
-      <div class="trait-row">
-        <span class="trait-name">Magic</span>
-        <span class="trait-value">${nft.traits.magic}</span>
-      </div>
-    `;
+    const traits = nft.traits;
+    if (Array.isArray(traits)) {
+      const rows = traits.map(t => {
+        const name = (t.trait_type || t.traitType || '').toString() || 'Trait';
+        const value = (t.value ?? '').toString();
+        return `
+          <div class="trait-row">
+            <span class="trait-name">${name}</span>
+            <span class="trait-value">${value}</span>
+          </div>
+        `;
+      }).join('');
+      detailTraits.innerHTML = `
+        <div class="trait-row">
+          <span class="trait-name">Level</span>
+          <span class="trait-value">${nft.level}</span>
+        </div>
+        ${rows}
+      `;
+    } else {
+      const t = traits || {};
+      detailTraits.innerHTML = `
+        <div class="trait-row">
+          <span class="trait-name">Level</span>
+          <span class="trait-value">${nft.level}</span>
+        </div>
+        <div class="trait-row">
+          <span class="trait-name">Strength</span>
+          <span class="trait-value">${t.strength ?? 0}</span>
+        </div>
+        <div class="trait-row">
+          <span class="trait-name">Agility</span>
+          <span class="trait-value">${t.agility ?? 0}</span>
+        </div>
+        <div class="trait-row">
+          <span class="trait-name">Magic</span>
+          <span class="trait-value">${t.magic ?? 0}</span>
+        </div>
+      `;
+    }
   }
 
   /* --- NFT Bonus Table --- */
@@ -408,31 +470,18 @@
   });
 
   async function renderSkillTree() {
-    console.log('=== RENDER SKILL TREE START ===');
-    
     /* Fetch token balance */
     let tokenBalance = 0;
-    const wallet = window.PhantomConnect.getStoredWallet();
-    console.log('Wallet address:', wallet);
-    console.log('window.TokenBurner available:', typeof window.TokenBurner !== 'undefined');
-    console.log('TokenBurner object:', window.TokenBurner);
-    
-    if (wallet && window.TokenBurner) {
+    const wallet = WalletManager.getStoredWallet();
+    if (wallet && typeof TokenBurner !== 'undefined') {
       try {
-        console.log('Fetching token balance from blockchain...');
-        tokenBalance = await window.TokenBurner.getBalance(wallet);
-        console.log('Token balance fetched:', tokenBalance);
+        tokenBalance = await TokenBurner.getBalance(wallet);
       } catch (e) {
-        console.error('Failed to fetch token balance:', e);
         tokenBalance = 0;
       }
     }
 
-    console.log('Final token balance:', tokenBalance);
-    if (tokenBalanceEl) {
-      tokenBalanceEl.textContent = tokenBalance.toLocaleString();
-      console.log('Token balance displayed in UI');
-    }
+    if (tokenBalanceEl) tokenBalanceEl.textContent = tokenBalance.toLocaleString();
     if (upgradeCostEl) upgradeCostEl.textContent = UPGRADE_TOKEN_COST.toLocaleString();
 
     const keys = Object.keys(SKILL_DEFS);
@@ -504,63 +553,28 @@
         const sk = player.skills[key];
         if (sk.level >= sk.maxLevel) return;
 
-        btn.textContent = 'TRANSFERING...';
+        btn.textContent = 'BURNING...';
         btn.disabled = true;
 
-        /* Attempt token transfer to treasury */
-        let upgradeSuccess = false;
+        /* Attempt token burn */
+        let burnSuccess = false;
 
-        if (window.TokenBurner &&
-            window.TokenBurner.TOKEN_MINT !== 'PASTE_YOUR_TOKEN_MINT_ADDRESS_HERE') {
-          try {
-            console.log('Starting skill upgrade with token transfer...');
-            
-            // Step 1: Transfer tokens to treasury
-            const txSig = await window.TokenBurner.burn(UPGRADE_TOKEN_COST);
-            
-            if (!txSig) {
-              throw new Error('Token transfer failed - no signature returned');
-            }
-            
-            console.log('Token transfer successful, signature:', txSig);
-            btn.textContent = 'VERIFYING...';
-            
-            // Step 2: Verify transaction on backend
-            const verifyResponse = await window.PhantomConnect.apiRequest('/skills/verify-burn', {
-              method: 'POST',
-              body: JSON.stringify({
-                signature: txSig,
-                amount: UPGRADE_TOKEN_COST
-              })
-            });
-            
-            if (verifyResponse && verifyResponse.verified) {
-              console.log('Backend verification successful');
-              upgradeSuccess = true;
-            } else {
-              throw new Error('Backend verification failed');
-            }
-            
-          } catch (error) {
-            console.error('Upgrade error:', error);
-            btn.textContent = 'FAILED: ' + error.message;
-            setTimeout(() => renderSkillTree(), 3000);
-            return;
-          }
+        if (typeof TokenBurner !== 'undefined' &&
+            TokenBurner.TOKEN_MINT !== 'PASTE_YOUR_TOKEN_MINT_ADDRESS_HERE') {
+          const txSig = await TokenBurner.burn(UPGRADE_TOKEN_COST);
+          burnSuccess = !!txSig;
         } else {
-          /*
-           * Token not yet deployed — allow upgrade for testing.
-           * Remove this else-block once the token is live!
-           */
-          upgradeSuccess = true;
-          console.warn('TokenBurner: Token mint not set — allowing free upgrade for testing.');
+          burnSuccess = false;
+          console.warn('TokenBurner: Token mint not set — upgrade disabled.');
         }
 
-        if (upgradeSuccess) {
+        if (burnSuccess) {
           sk.level++;
-          // TODO: Save skills to backend database
-          localStorage.setItem('wb_player_skills', JSON.stringify(player.skills));
+          WalletManager.savePlayer(player);
           await renderSkillTree();
+        } else {
+          btn.textContent = 'BURN FAILED';
+          setTimeout(() => renderSkillTree(), 2000);
         }
       });
     });
@@ -636,14 +650,11 @@
      LOGOUT
      ====================== */
   btnLogout.addEventListener('click', async () => {
-    await window.PhantomConnect.disconnect();
+    if (window.PhantomConnect && window.PhantomConnect.disconnect) {
+      await window.PhantomConnect.disconnect();
+    }
     window.location.href = 'index.html';
   });
-
-  /* ======================
-     START
-     ====================== */
-  init();
 
   } // end of initializeGame function
 
